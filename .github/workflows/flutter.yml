@@ -1,0 +1,33 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Set up the Flutter SDK
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable' # Use the stable channel for Flutter
+          flutter-version: '3.x' # Specify a version or use '3.x' for the latest stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Verify code formatting (uncomment if you want to enforce formatting)
+      # - name: Verify formatting
+      #   run: flutter format --set-exit-if-changed .
+
+      - name: Analyze project source
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
