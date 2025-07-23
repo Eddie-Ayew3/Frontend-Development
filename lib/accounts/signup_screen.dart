@@ -6,6 +6,7 @@ import 'package:safenest/features/user_management/parent_screen.dart';
 import 'package:safenest/features/user_management/teacher_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+// SignUpScreen is the main registration page widget
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -14,11 +15,14 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
-  final TextEditingController _usernameController = TextEditingController();
+  // Controllers for input fields
+  final TextEditingController _fullnameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>(); // Key for form validation
+
+  // UI state variables
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -28,21 +32,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   void dispose() {
-    _usernameController.dispose();
+    // Dispose controllers to free resources
+    _fullnameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
+  // Handles sign up logic and navigation
   Future<void> _handleSignUp() async {
+    // Validate form fields
     if (!_formKey.currentState!.validate()) return;
 
+    // Check if terms are accepted
     if (!_acceptedTerms) {
       setState(() => _errorMessage = 'Please accept the terms and conditions');
       return;
     }
 
+    // Check if passwords match
     if (_passwordController.text != _confirmPasswordController.text) {
       setState(() => _errorMessage = 'Passwords do not match');
       return;
@@ -56,8 +65,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
     });
 
     try {
+      // Call API to register user
       final response = await ApiService.safeApiCall(() => ApiService.register(
-            username: _usernameController.text.trim(),
+            fullname: _fullnameController.text.trim(),
             email: _emailController.text.trim(),
             password: _passwordController.text.trim(),
             role: _selectedRole!,
@@ -65,29 +75,24 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
       if (!mounted) return;
 
+      // Check if token is received
       if (response['token'] == null) {
         throw ApiException('No token received');
       }
 
+      // Store auth token
       ApiService.setAuthToken(response['token']);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Signup successful!')),
       );
 
-      if (response['emailVerified'] == false) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const EmailVerificationScreen(),
-          ),
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => _getDashboardForRole(_selectedRole!)),
-        );
-      }
+      // Navigate to dashboard based on role (no email verification)
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => _getDashboardForRole(_selectedRole!)),
+      );
     } on ApiException catch (e) {
+      // Show API error
       if (mounted) {
         setState(() => _errorMessage = _mapErrorToMessage(e));
         ScaffoldMessenger.of(context).showSnackBar(
@@ -95,6 +100,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         );
       }
     } catch (e) {
+      // Show generic error
       if (mounted) {
         setState(() => _errorMessage = 'An unexpected error occurred');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -108,6 +114,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
+  // Maps API error messages to user-friendly messages
   String _mapErrorToMessage(ApiException e) {
     switch (e.message) {
       case 'Email already exists':
@@ -121,6 +128,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
+  // Returns the dashboard widget based on user role
   Widget _getDashboardForRole(String role) {
     switch (role.toLowerCase()) {
       case 'admin':
@@ -134,6 +142,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
+  // Shows a dialog with terms and privacy policy links
   void _showTermsDialog() {
     showDialog(
       context: context,
@@ -193,6 +202,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  // Returns a password strength message
   String _getPasswordStrengthText(String password) {
     if (password.isEmpty) return 'Enter a password';
     if (password.length < 8) return 'Too short (min 8 chars)';
@@ -202,6 +212,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return 'Strong password';
   }
 
+  // Returns a color based on password strength
   Color _getPasswordStrengthColor(String password) {
     if (password.isEmpty) return Colors.grey;
     if (password.length < 8) return Colors.red;
@@ -220,6 +231,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           child: Column(
             children: [
               const SizedBox(height: 40),
+              // App logo
               Center(
                 child: Image.asset('assets/safenest.png', height: 120),
               ),
@@ -234,14 +246,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                 ),
                 child: AbsorbPointer(
-                  absorbing: _isLoading,
+                  absorbing: _isLoading, // Disable form while loading
                   child: Opacity(
-                    opacity: _isLoading ? 0.6 : 1.0,
+                    opacity: _isLoading ? 0.6 : 1.0, // Dim form while loading
                     child: Form(
                       key: _formKey,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // Title
                           const Center(
                             child: Text(
                               'Create New Account',
@@ -252,6 +265,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             ),
                           ),
                           const SizedBox(height: 32),
+                          // Error message display
                           if (_errorMessage != null)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 16),
@@ -264,10 +278,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 textAlign: TextAlign.center,
                               ),
                             ),
+                          // Full name input
                           _buildLabel('FULL NAME'),
                           _buildTextField(
-                            controller: _usernameController,
+                            controller: _fullnameController,
                             hintText: 'Enter your full name',
+                            fillColor: Colors.grey[200]!, // <-- Use a light grey background for Full Name
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Please enter your name';
@@ -279,6 +295,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             },
                           ),
                           const SizedBox(height: 20),
+                          // Email input
                           _buildLabel('EMAIL'),
                           _buildTextField(
                             controller: _emailController,
@@ -296,9 +313,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             },
                           ),
                           const SizedBox(height: 20),
+                          // Role dropdown
                           _buildLabel('ROLE'),
                           _buildRoleDropdown(),
                           const SizedBox(height: 20),
+                          // Password input
                           _buildLabel('PASSWORD'),
                           _buildPasswordField(
                             controller: _passwordController,
@@ -307,6 +326,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             onToggleVisibility: () =>
                                 setState(() => _obscurePassword = !_obscurePassword),
                           ),
+                          // Password strength indicator
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
@@ -319,6 +339,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             ),
                           ),
                           const SizedBox(height: 20),
+                          // Confirm password input
                           _buildLabel('CONFIRM PASSWORD'),
                           _buildPasswordField(
                             controller: _confirmPasswordController,
@@ -328,6 +349,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 () => _obscureConfirmPassword = !_obscureConfirmPassword),
                           ),
                           const SizedBox(height: 16),
+                          // Terms and conditions checkbox
                           Row(
                             children: [
                               Checkbox(
@@ -356,6 +378,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             ],
                           ),
                           const SizedBox(height: 24),
+                          // Sign up button
                           ElevatedButton(
                             onPressed: _isLoading ? null : _handleSignUp,
                             style: ElevatedButton.styleFrom(
@@ -378,6 +401,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                   ),
                           ),
                           const SizedBox(height: 20),
+                          // Login link
                           Center(
                             child: Text.rich(
                               TextSpan(
@@ -411,6 +435,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  // Builds a label for input fields
   Widget _buildLabel(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -424,18 +449,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  // Builds a generic text input field with validation
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
     required String? Function(String?) validator,
     TextInputType? keyboardType,
+    Color fillColor = const Color(0xFFF0F0F0), // <-- Add this line
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       decoration: InputDecoration(
         filled: true,
-        fillColor: const Color(0xFFF0F0F0),
+        fillColor: fillColor, // <-- Use the fillColor parameter
         hintText: hintText,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -450,6 +477,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  // Builds a password input field with show/hide toggle and validation
   Widget _buildPasswordField({
     required TextEditingController controller,
     required String hintText,
@@ -492,6 +520,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  // Builds the role dropdown field
   Widget _buildRoleDropdown() {
     return DropdownButtonFormField<String>(
       value: _selectedRole,
@@ -519,29 +548,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 }
 
-// Placeholder for email verification screen
 class EmailVerificationScreen extends StatelessWidget {
   const EmailVerificationScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify Your Email')),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Please verify your email to continue.',
-              style: TextStyle(fontSize: 18),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context), // Simulate verification
-              child: const Text('Continue'),
-            ),
-          ],
-        ),
+        child: Text('Email Verification Screen (to be removed)'),
       ),
     );
   }

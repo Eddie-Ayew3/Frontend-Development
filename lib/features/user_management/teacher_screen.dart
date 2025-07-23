@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:safenest/features/dashboard/update_sections/update_teacher.dart';
@@ -58,38 +60,34 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   Future<void> _logout() async {
     if (!mounted) return;
 
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
 
     try {
       await ApiService.logout();
       if (mounted) {
+        Navigator.pop(context); // Close the loading dialog
         Navigator.pushNamedAndRemoveUntil(
-  context,
-  '/login',
-  (Route<dynamic> route) => false,
-);
+          context,
+          '/login',
+          (Route<dynamic> route) => false,
+        );
       }
     } on ApiException catch (e) {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = _mapErrorToMessage(e);
-        });
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Logout failed: ${_mapErrorToMessage(e)}')),
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'An unexpected error occurred';
-        });
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('An unexpected error occurred')),
+          const SnackBar(content: Text('Logout failed: An unexpected error occurred')),
         );
       }
     }
@@ -104,7 +102,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     });
 
     try {
-      // Navigate to QRScannerScreen or open scanner
       final qrCode = await Navigator.push<String>(
         context,
         MaterialPageRoute(
@@ -130,7 +127,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(response['message'] ?? 'QR code verified')),
         );
-        _handleRefresh(); // Refresh pickup logs
+        _handleRefresh();
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -167,13 +164,20 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         return e.message;
     }
   }
+
   Future<void> updateTeacher() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const UpdateTeacherScreen()),
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => UpdateTeacherScreen(),
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+          opacity: animation,
+          child: child,
+        ),
+      ),
     );
     if (result == true && mounted) {
-      _handleRefresh(); // Refresh data after update
+      _handleRefresh();
     }
   }
 
@@ -185,17 +189,17 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       backgroundColor: const Color(0xFF5271FF),
       appBar: AppBar(
         title: const Text('Teacher Dashboard'),
+        centerTitle: true,
         backgroundColor: const Color(0xFF5271FF),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert, color: Colors.white),
             onSelected: (value) {
               if (value == 'refresh') {
                 _handleRefresh();
-              }else if (value == 'update_profile') {
+              } else if (value == 'update_profile') {
                 updateTeacher();
               }
-
             },
             itemBuilder: (BuildContext context) => const [
               PopupMenuItem(value: 'refresh', child: Text('Refresh Data')),
@@ -204,170 +208,259 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           ),
           IconButton(
             onPressed: _logout,
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, color: Colors.white),
           ),
         ],
       ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _handleRefresh,
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                const SizedBox(height: 40),
-                Center(
-                  child: Image.asset('assets/safenest_icon.png', height: 120),
-                ),
-                const SizedBox(height: 20),
-                Container(
+          child: Column(
+            children: [
+              const SizedBox(height: 3),
+              Expanded(
+                child: Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(40),
-                      topRight: Radius.circular(40),
+                      topLeft: Radius.circular(20),
+                      topRight: Radius.circular(20),
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        '📅 $formattedDate',
-                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                      ),
-                      const SizedBox(height: 16),
-                      FutureBuilder<Map<String, dynamic>>(
-                        future: _teacherProfile,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
-                          } else if (snapshot.hasError) {
-                            String errorMessage = snapshot.error is ApiException
-                                ? _mapErrorToMessage(snapshot.error as ApiException)
-                                : 'Error: ${snapshot.error.toString()}';
-                            setState(() {
-                              _errorMessage = errorMessage;
-                            });
-                            return Text('Error: $errorMessage');
-                          } else if (snapshot.hasData) {
-                            _teacherName = snapshot.data!['fullName'] ?? 'Teacher';
-                            return Text(
-                              'Hello, $_teacherName!',
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            );
-                          }
-                          return const Text(
-                            'Hello, Teacher!',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      if (_errorMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: Colors.red,
-                              fontSize: 16,
-                            ),
-                            textAlign: TextAlign.center,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
                           ),
-                        ),
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _verifyQRCode,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF5271FF),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        child: const Text(
-                          'Scan QR Code',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Recent Pickups',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      FutureBuilder<List<dynamic>>(
-                        future: _pickupLogs,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
-                          } else if (snapshot.hasError) {
-                            String errorMessage = snapshot.error is ApiException
-                                ? _mapErrorToMessage(snapshot.error as ApiException)
-                                : 'Error: ${snapshot.error.toString()}';
-                            setState(() {
-                              _errorMessage = errorMessage;
-                            });
-                            return Center(
-                              child: Column(
-                                children: [
-                                  Text('Error: $errorMessage'),
-                                  const SizedBox(height: 16),
-                                  ElevatedButton(
-                                    onPressed: _handleRefresh,
-                                    child: const Text('Retry'),
+                          child: IntrinsicHeight(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                const SizedBox(height: 20),
+                                Text(
+                                  '👋 Hello, $_teacherName!',
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
                                   ),
-                                ],
-                              ),
-                            );
-                          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                            return const Center(child: Text('No pickup logs found'));
-                          }
-
-                          return ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: snapshot.data!.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final log = snapshot.data![index];
-                              final childName = log['fullName'] ?? 'Unknown Child';
-                              final parentName = log['parentName'] ?? 'Unknown Parent';
-                              final dateTime = DateTime.tryParse(log['verifiedAt'] ?? '');
-                              final formattedTime = dateTime != null
-                                  ? DateFormat('MMM d, h:mm a').format(dateTime)
-                                  : 'Unknown time';
-                              return Card(
-                                child: ListTile(
-                                  title: Text('$childName picked up by $parentName'),
-                                  subtitle: Text(formattedTime),
-                                  trailing: const Icon(
-                                    Icons.check_circle,
-                                    color: Colors.green,
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '📅 $formattedDate',
+                                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                if (_errorMessage != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    child: Material(
+                                      color: Colors.red[50],
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(Icons.error_outline, color: Colors.red, size: 22),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                _errorMessage!,
+                                                style: const TextStyle(
+                                                  color: Colors.red,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                FutureBuilder<Map<String, dynamic>>(
+                                  future: _teacherProfile,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState == ConnectionState.waiting || _isLoading) {
+                                      return const Center(child: CircularProgressIndicator());
+                                    } else if (snapshot.hasError) {
+                                      final errorMessage = snapshot.error is ApiException
+                                          ? _mapErrorToMessage(snapshot.error as ApiException)
+                                          : 'Error: ${snapshot.error.toString()}';
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                        child: Material(
+                                          color: Colors.red[50],
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                const Icon(Icons.error_outline, color: Colors.red, size: 22),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    errorMessage,
+                                                    style: const TextStyle(
+                                                      color: Colors.red,
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w500,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    } else if (snapshot.hasData) {
+                                      // Name already set above
+                                      return const SizedBox.shrink();
+                                    }
+                                    return const SizedBox.shrink();
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                Card(
+                                  elevation: 6,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  color: const Color(0xFF5271FF),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(20),
+                                    onTap: _isLoading ? null : _verifyQRCode,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.qr_code_scanner, color: Colors.white, size: 32),
+                                          const SizedBox(width: 16),
+                                          Text(
+                                            'Scan QR Code',
+                                            style: const TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                              letterSpacing: 1.2,
+                                            ),
+                                          ),
+                                          if (_isLoading) ...[
+                                            const SizedBox(width: 16),
+                                            const SizedBox(
+                                              width: 22,
+                                              height: 22,
+                                              child: CircularProgressIndicator(
+                                                color: Colors.white,
+                                                strokeWidth: 2.5,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ],
+                                const SizedBox(height: 24),
+                                const Text(
+                                  'Recent Pickups',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 16),
+                                FutureBuilder<List<dynamic>>(
+                                  future: _pickupLogs,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState == ConnectionState.waiting || _isLoading) {
+                                      return const Center(child: CircularProgressIndicator());
+                                    } else if (snapshot.hasError) {
+                                      final errorMessage = snapshot.error is ApiException
+                                          ? _mapErrorToMessage(snapshot.error as ApiException)
+                                          : 'Error: ${snapshot.error.toString()}';
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                        child: Material(
+                                          color: Colors.red[50],
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                const Icon(Icons.error_outline, color: Colors.red, size: 22),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    errorMessage,
+                                                    style: const TextStyle(
+                                                      color: Colors.red,
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w500,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                      return const Center(child: Text('No pickup logs found', style: TextStyle(color: Colors.grey)));
+                                    }
+
+                                    return ListView.separated(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemCount: snapshot.data!.length,
+                                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                                      itemBuilder: (context, index) {
+                                        final log = snapshot.data![index];
+                                        final childName = log['fullName'] ?? 'Unknown Child';
+                                        final parentName = log['parentName'] ?? 'Unknown Parent';
+                                        final dateTime = DateTime.tryParse(log['verifiedAt'] ?? '');
+                                        final formattedTime = dateTime != null
+                                            ? DateFormat('MMM d, h:mm a').format(dateTime)
+                                            : 'Unknown time';
+                                        return Card(
+                                          elevation: 3,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          child: ListTile(
+                                            contentPadding: const EdgeInsets.all(12),
+                                            leading: const Icon(Icons.check_circle, color: Colors.green, size: 24),
+                                            title: Text('$childName picked up by $parentName',
+                                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                                            subtitle: Text(formattedTime, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                                            trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

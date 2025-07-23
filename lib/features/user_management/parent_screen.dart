@@ -15,8 +15,8 @@ class ParentDashboard extends StatefulWidget {
 }
 
 class _ParentDashboardState extends State<ParentDashboard> {
-  late Future<List<dynamic>> _children;
-  late Future<List<dynamic>> _pickupLogs;
+  late Future<List<dynamic>> _childrenFuture;
+  late Future<List<dynamic>> _pickupLogsFuture;
   String _parentName = 'Parent';
   String? _errorMessage;
   bool _isLoadingQR = false;
@@ -29,8 +29,8 @@ class _ParentDashboardState extends State<ParentDashboard> {
 
   Future<void> _loadData() async {
     setState(() {
-      _children = _fetchChildren();
-      _pickupLogs = _fetchPickupLogs();
+      _childrenFuture = _fetchChildren();
+      _pickupLogsFuture = _fetchPickupLogs();
     });
     try {
       final parentProfile = await ApiService.getParentProfile();
@@ -56,11 +56,18 @@ class _ParentDashboardState extends State<ParentDashboard> {
 
   Future<List<dynamic>> _fetchChildren() async {
     try {
-      return await ApiService.safeApiCall(() => ApiService.getParentChildren());
-    } on ApiException catch (e) {
-      throw ApiException('Failed to load children: ${e.message}', statusCode: e.statusCode);
+      final response = await ApiService.safeApiCall(() => ApiService.getChildren());
+      return List<Map<String, dynamic>>.from(response['children'] ?? []);
     } catch (e) {
-      throw ApiException('Failed to load children: ${e.toString()}');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load children';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load children')),
+        );
+      }
+      return [];
     }
   }
 
@@ -75,7 +82,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
   }
 
   Future<void> _handleRefresh() async {
-      await _loadData();
+    await _loadData();
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -90,11 +97,12 @@ class _ParentDashboardState extends State<ParentDashboard> {
     try {
       await ApiService.logout();
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
+        Navigator.pop(context);
         Navigator.pushNamedAndRemoveUntil(
-          context,'/login',
-           (Route<dynamic> route) => false,
-           );
+          context,
+          '/login',
+          (Route<dynamic> route) => false,
+        );
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -123,7 +131,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
 
     try {
       final response = await ApiService.safeApiCall(
-        () => ApiService.generateQRCode(childId),
+        () => ApiService.generateQRCode(int.parse(childId)),
       );
 
       final base64Image = response['qrCode'];
@@ -144,6 +152,10 @@ class _ParentDashboardState extends State<ParentDashboard> {
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Close'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pushNamed(context, '/parent-dashboard'),
+                child: const Text('Back to Dashboard'),
               ),
             ],
           ),
@@ -184,17 +196,37 @@ class _ParentDashboardState extends State<ParentDashboard> {
         return 'Please check your internet connection';
       case 'Unauthorized':
         return 'Please log in again';
+      case 'Child not found or not associated with this parent.':
+        return 'The selected child is not associated with you';
       default:
         return e.message;
     }
   }
+
+  void _navigateWithFade(Widget page) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => page,
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+          opacity: animation,
+          child: child,
+        ),
+      ),
+    );
+  }
+
   Future<void> updateParent() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const UpdateParentScreen()),
+    final result = await Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const UpdateParentScreen(),
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+          opacity: animation,
+          child: child,
+        ),
+      ),
     );
     if (result == true && mounted) {
-      _handleRefresh(); // Refresh data after update
+      _handleRefresh();
     }
   }
 
@@ -206,6 +238,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
       backgroundColor: const Color(0xFF5271FF),
       appBar: AppBar(
         title: const Text('Parent Dashboard'),
+        centerTitle: true,
         backgroundColor: const Color(0xFF5271FF),
         actions: [
           PopupMenuButton<String>(
@@ -213,8 +246,8 @@ class _ParentDashboardState extends State<ParentDashboard> {
             onSelected: (value) {
               if (value == 'refresh') {
                 _handleRefresh();
-              }else if (value == 'update_profile') {
-                updateParent();
+              } else if (value == 'update_profile') {
+                updateParent(); // Now uses fade transition
               }
             },
             itemBuilder: (BuildContext context) => const [
@@ -231,15 +264,12 @@ class _ParentDashboardState extends State<ParentDashboard> {
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _handleRefresh,
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                const SizedBox(height: 40),
-                Center(
-                  child: Image.asset('assets/safenest_icon.png', height: 120),
-                ),
-                const SizedBox(height: 20),
-                Container(
+          child: Column(
+            children: [
+              const SizedBox(height: 3),
+              Expanded(
+                child: Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: const BoxDecoration(
                     color: Colors.white,
@@ -248,177 +278,240 @@ class _ParentDashboardState extends State<ParentDashboard> {
                       topRight: Radius.circular(40),
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        '📅 $formattedDate',
-                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Hello, $_parentName!',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (_errorMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: Colors.red,
-                              fontSize: 16,
-                            ),
-                            textAlign: TextAlign.center,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
                           ),
-                        ),
-                      const Text(
-                        'Your Children',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      FutureBuilder<List<dynamic>>(
-                        future: _children,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
-                          } else if (snapshot.hasError) {
-                            String errorMessage;
-                            if (snapshot.error is ApiException) {
-                              errorMessage = _mapErrorToMessage(snapshot.error as ApiException);
-                            } else {
-                              errorMessage = 'Error: ${snapshot.error.toString()}';
-                            }
-                            setState(() {
-                              _errorMessage = errorMessage;
-                            });
-                            return Center(
-                              child: Column(
-                                children: [
-                                  Text(errorMessage),
-                                  const SizedBox(height: 16),
-                                  ElevatedButton(
-                                    onPressed: _handleRefresh,
-                                    child: const Text('Retry'),
+                          child: IntrinsicHeight(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  '📅 $formattedDate',
+                                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Hello, $_parentName!',
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                ],
-                              ),
-                            );
-                          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                            return const Center(child: Text('No children found'));
-                          }
-
-                          return ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: snapshot.data!.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final child = snapshot.data![index];
-                              final childId = child['id'] ?? 'unknown';
-                              final childName = child['fullName'] ?? 'Unknown Child';
-                              final childGrade = child['grade'] ?? 'Unknown Grade';
-                              return Card(
-                                child: ListTile(
-                                  title: Text(childName),
-                                  subtitle: Text(childGrade),
-                                  trailing: _isLoadingQR
-                                      ? const CircularProgressIndicator()
-                                      : ElevatedButton(
-                                          onPressed: () => _generateAndShowQRCode(context, childId, childName),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF5271FF),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(8),
+                                ),
+                                const SizedBox(height: 16),
+                                if (_errorMessage != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    child: Material(
+                                      color: Colors.red[50],
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(Icons.error_outline, color: Colors.red, size: 22),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                _errorMessage!,
+                                                style: const TextStyle(
+                                                  color: Colors.red,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                const Text(
+                                  'Recent Pickups',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(height: 8),
+                                FutureBuilder<List<dynamic>>(
+                                  future: _pickupLogsFuture,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState == ConnectionState.waiting) {
+                                      return const Center(child: CircularProgressIndicator());
+                                    } else if (snapshot.hasError) {
+                                      final errorMessage = snapshot.error is ApiException
+                                          ? _mapErrorToMessage(snapshot.error as ApiException)
+                                          : 'Error: ${snapshot.error.toString()}';
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                        child: Material(
+                                          color: Colors.red[50],
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                const Icon(Icons.error_outline, color: Colors.red, size: 22),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    errorMessage,
+                                                    style: const TextStyle(
+                                                      color: Colors.red,
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w500,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
-                                          child: const Text('Show QR'),
                                         ),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Recent Pickups',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      FutureBuilder<List<dynamic>>(
-                        future: _pickupLogs,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
-                          } else if (snapshot.hasError) {
-                            String errorMessage;
-                            if (snapshot.error is ApiException) {
-                              errorMessage = _mapErrorToMessage(snapshot.error as ApiException);
-                            } else {
-                              errorMessage = 'Error: ${snapshot.error.toString()}';
-                            }
-                            setState(() {
-                              _errorMessage = errorMessage;
-                            });
-                            return Center(
-                              child: Column(
-                                children: [
-                                  Text(errorMessage),
-                                  const SizedBox(height: 16),
-                                  ElevatedButton(
-                                    onPressed: _handleRefresh,
-                                    child: const Text('Retry'),
-                                  ),
-                                ],
-                              ),
-                            );
-                          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                            return const Center(child: Text('No pickup logs found'));
-                          }
+                                      );
+                                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                      return const Center(child: Text('No pickup logs found'));
+                                    }
 
-                          return ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: snapshot.data!.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final log = snapshot.data![index];
-                              final childName = log['fullName'] ?? 'Unknown Child';
-                              final parentName = log['parentName'] ?? 'Unknown Parent';
-                              final dateTime = DateTime.tryParse(log['verifiedAt'] ?? '');
-                              final formattedTime = dateTime != null
-                                  ? DateFormat('MMM d, h:mm a').format(dateTime)
-                                  : 'Unknown time';
-                              return Card(
-                                child: ListTile(
-                                  title: Text('$childName picked up by $parentName'),
-                                  subtitle: Text(formattedTime),
-                                  trailing: const Icon(
-                                    Icons.check_circle,
-                                    color: Colors.green,
+                                    return ListView.separated(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemCount: snapshot.data!.length,
+                                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                      itemBuilder: (context, index) {
+                                        final log = snapshot.data![index];
+                                        final childName = log['fullName'] ?? 'Unknown Child';
+                                        final parentName = log['parentName'] ?? 'Unknown Parent';
+                                        final dateTime = DateTime.tryParse(log['verifiedAt'] ?? '');
+                                        final formattedTime = dateTime != null
+                                            ? DateFormat('MMM d, h:mm a').format(dateTime)
+                                            : 'Unknown time';
+                                        return Card(
+                                          child: ListTile(
+                                            title: Text('$childName picked up by $parentName'),
+                                            subtitle: Text(formattedTime),
+                                            trailing: const Icon(
+                                              Icons.check_circle,
+                                              color: Colors.green,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Generate Pickup QR Code',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                AbsorbPointer(
+                                  absorbing: _isLoadingQR,
+                                  child: Opacity(
+                                    opacity: _isLoadingQR ? 0.6 : 1.0,
+                                    child: FutureBuilder<List<dynamic>>(
+                                      future: _childrenFuture,
+                                      builder: (context, snapshot) {
+                                        if (snapshot.connectionState == ConnectionState.waiting) {
+                                          return const Center(child: CircularProgressIndicator());
+                                        } else if (snapshot.hasError) {
+                                          final errorMessage = snapshot.error is ApiException
+                                              ? _mapErrorToMessage(snapshot.error as ApiException)
+                                              : 'Error: ${snapshot.error.toString()}';
+                                          return Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                            child: Material(
+                                              color: Colors.red[50],
+                                              borderRadius: BorderRadius.circular(12),
+                                              child: Padding(
+                                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    const Icon(Icons.error_outline, color: Colors.red, size: 22),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        errorMessage,
+                                                        style: const TextStyle(
+                                                          color: Colors.red,
+                                                          fontSize: 16,
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                        textAlign: TextAlign.center,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                          return const Center(child: Text('No children found'));
+                                        }
+
+                                        return ListView.separated(
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          itemCount: snapshot.data!.length,
+                                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                          itemBuilder: (context, index) {
+                                            final child = snapshot.data![index];
+                                            final childId = child['id']?.toString() ?? 'unknown';
+                                            final childName = child['fullName'] ?? 'Unknown Child';
+                                            final childGrade = child['grade'] ?? 'Unknown Grade';
+                                            return Card(
+                                              child: ListTile(
+                                                title: Text(childName),
+                                                subtitle: Text(childGrade),
+                                                trailing: _isLoadingQR
+                                                    ? const CircularProgressIndicator()
+                                                    : ElevatedButton(
+                                                        onPressed: () => _generateAndShowQRCode(context, childId, childName),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: const Color(0xFF5271FF),
+                                                          shape: RoundedRectangleBorder(
+                                                            borderRadius: BorderRadius.circular(16),
+                                                          ),
+                                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                                        ),
+                                                        child: const Text(
+                                                          'Generate QR Code',
+                                                          style: TextStyle(
+                                                            fontSize: 16,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Colors.white,
+                                                          ),
+                                                        ),
+                                                      ),
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      },
+                                    ),
                                   ),
                                 ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ],
+                                const SizedBox(height: 16),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
