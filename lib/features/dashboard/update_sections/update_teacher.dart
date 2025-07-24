@@ -1,8 +1,10 @@
+
 import 'package:flutter/material.dart';
 import 'package:safenest/api_services/file.dart';
 
 class UpdateTeacherScreen extends StatefulWidget {
-  const UpdateTeacherScreen({super.key});
+  final String userId;
+  const UpdateTeacherScreen({super.key, required this.userId});
 
   @override
   State<UpdateTeacherScreen> createState() => _UpdateTeacherScreenState();
@@ -14,6 +16,47 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
   final TextEditingController _gradeController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTeacherProfile();
+  }
+
+  Future<void> _loadTeacherProfile() async {
+    try {
+      final profile = await ApiService.getTeacherProfile(userId: widget.userId);
+      if (mounted) {
+        setState(() {
+          _phoneController.text = profile['phone'] ?? '';
+          _gradeController.text = profile['grade'] ?? '';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = 'Failed to load profile: ${e.toString()}');
+      }
+    }
+  }
+
+  String _mapErrorToMessage(ApiException e) {
+    switch (e.message) {
+      case 'Invalid phone number':
+        return 'Please enter a valid phone number';
+      case 'Network error':
+        return 'Please check your internet connection';
+      case 'Unauthorized':
+        return 'Please log in again';
+      case 'You can only update your own profile.':
+        return 'You can only update your own profile';
+      case 'Teacher not found.':
+        return 'Profile not found';
+      case 'Invalid grade. Use \'Grade 1\' to \'Grade 5\'.':
+        return 'Invalid grade. Use Grade 1 to Grade 5';
+      default:
+        return e.message;
+    }
+  }
 
   @override
   void dispose() {
@@ -31,15 +74,16 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
         });
         await ApiService.safeApiCall(
           () => ApiService.updateTeacher(
-            phone: _phoneController.text, // Fixed syntax
-            grade: _gradeController.text,
+            userId: widget.userId,
+            phone: _phoneController.text.trim(),
+            grade: _gradeController.text.trim(),
           ),
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Details Updated successfully!')),
+            const SnackBar(content: Text('Details updated successfully!')),
           );
-          Navigator.pop(context);
+          Navigator.pop(context, true); // Return true to trigger refresh
         }
       } on ApiException catch (e) {
         if (mounted) {
@@ -66,7 +110,7 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirm Submission'),
-        content: const Text('Are you sure you want to update details?'),
+        content: const Text('Are you sure you want to update your details?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -85,17 +129,35 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
     }
   }
 
-  String _mapErrorToMessage(ApiException e) {
-    switch (e.message) {
-      case 'Invalid phone number':
-        return 'Please enter a valid phone number';
-      case 'Network error':
-        return 'Please check your internet connection';
-      case 'Unauthorized':
-        return 'Please log in again';
-      default:
-        return e.message;
-    }
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hintText,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(letterSpacing: 1, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: const Color(0xFFF0F0F0),
+            hintText: hintText,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+          validator: validator,
+        ),
+      ],
+    );
   }
 
   @override
@@ -122,75 +184,82 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
                     topRight: Radius.circular(40),
                   ),
                 ),
-                child: SingleChildScrollView(
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_errorMessage != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Text(
-                              _errorMessage!,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 16,
+                child: AbsorbPointer(
+                  absorbing: _isLoading,
+                  child: Opacity(
+                    opacity: _isLoading ? 0.6 : 1.0,
+                    child: SingleChildScrollView(
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (_errorMessage != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 16,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
                               ),
-                              textAlign: TextAlign.center,
+                            _buildTextField(
+                              controller: _phoneController,
+                              label: 'PHONE NUMBER',
+                              hintText: 'Enter phone number',
+                              keyboardType: TextInputType.phone,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter phone number';
+                                }
+                                if (!RegExp(r'^\+?\d{10,15}$').hasMatch(value)) {
+                                  return 'Enter a valid phone number (10-15 digits)';
+                                }
+                                return null;
+                              },
                             ),
-                          ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(
-                            labelText: 'Phone Number',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(16)),
+                            const SizedBox(height: 20),
+                            _buildTextField(
+                              controller: _gradeController,
+                              label: 'GRADE',
+                              hintText: 'Enter grade (e.g., Grade 1)',
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter grade';
+                                }
+                                if (!RegExp(r'^Grade [1-5]$').hasMatch(value)) {
+                                  return 'Enter a valid grade (Grade 1 to Grade 5)';
+                                }
+                                return null;
+                              },
                             ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter phone number';
-                            }
-                            if (!RegExp(r'^\+?\d{10,15}$').hasMatch(value)) {
-                              return 'Enter a valid phone number (10-15 digits)';
-                            }
-                            return null;
-                          },
+                            const SizedBox(height: 24),
+                            ElevatedButton(
+                              onPressed: _isLoading ? null : _confirmSubmission,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF5271FF),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const CircularProgressIndicator(color: Colors.white)
+                                  : const Text(
+                                      'Save Details',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _gradeController,
-                          decoration: const InputDecoration(
-                            labelText: 'Grade',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(16)),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter Grade';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: _isLoading ? null : _confirmSubmission,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF5271FF),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: _isLoading
-                              ? const CircularProgressIndicator(color: Colors.white)
-                              : const Text('Save Teacher', style: TextStyle(fontSize: 16,color: Colors.white, fontWeight: FontWeight.w600)),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

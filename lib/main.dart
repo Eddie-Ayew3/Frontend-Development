@@ -27,8 +27,8 @@ class MyApp extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const SignUpScreen(),
-        '/parent_dashboard': (context) => const ParentDashboard(),
-        '/teacher_dashboard': (context) => const TeacherDashboard(),
+        '/parent_dashboard': (context) => const ParentDashboard(userId: '',),
+        '/teacher_dashboard': (context) => const TeacherDashboard(userId: '',),
         '/admin_dashboard': (context) => const AdminDashboard(),
       },
       onUnknownRoute: (settings) {

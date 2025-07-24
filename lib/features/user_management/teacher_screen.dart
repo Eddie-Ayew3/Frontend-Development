@@ -1,13 +1,16 @@
+
 // ignore_for_file: use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:safenest/api_services/file.dart';
 import 'package:safenest/features/dashboard/update_sections/update_teacher.dart';
 import 'package:safenest/features/qr_code_management/qr_scanner_screen.dart';
-import 'package:safenest/api_services/file.dart';
+import 'package:safenest/features/user_management/change_password_screen.dart';
 
 class TeacherDashboard extends StatefulWidget {
-  const TeacherDashboard({super.key});
+  final String userId; // Changed to non-nullable String
+  const TeacherDashboard({super.key, required this.userId});
 
   @override
   State<TeacherDashboard> createState() => _TeacherDashboardState();
@@ -35,7 +38,13 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   Future<Map<String, dynamic>> _fetchTeacherProfile() async {
     try {
-      return await ApiService.safeApiCall(() => ApiService.getTeacherProfile());
+      final profile = await ApiService.safeApiCall(() => ApiService.getTeacherProfile(userId: widget.userId));
+      if (mounted) {
+        setState(() {
+          _teacherName = profile['fullName'] ?? 'Teacher';
+        });
+      }
+      return profile;
     } on ApiException catch (e) {
       throw ApiException('Failed to load teacher profile: ${e.message}', statusCode: e.statusCode);
     } catch (e) {
@@ -69,7 +78,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     try {
       await ApiService.logout();
       if (mounted) {
-        Navigator.pop(context); // Close the loading dialog
+        Navigator.pop(context);
         Navigator.pushNamedAndRemoveUntil(
           context,
           '/login',
@@ -104,9 +113,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     try {
       final qrCode = await Navigator.push<String>(
         context,
-        MaterialPageRoute(
-          builder: (context) => const QRScannerScreen(),
-        ),
+        MaterialPageRoute(builder: (context) => const QRScannerScreen()),
       );
 
       if (qrCode == null || !mounted) {
@@ -165,20 +172,17 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     }
   }
 
-  Future<void> updateTeacher() async {
-    final result = await Navigator.push(
+  void updateTeacher() {
+    Navigator.push(
       context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => UpdateTeacherScreen(),
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: animation,
-          child: child,
-        ),
+      MaterialPageRoute(
+        builder: (_) => UpdateTeacherScreen(userId: widget.userId),
       ),
-    );
-    if (result == true && mounted) {
-      _handleRefresh();
-    }
+    ).then((result) {
+      if (result == true && mounted) {
+        _handleRefresh();
+      }
+    });
   }
 
   @override
@@ -199,11 +203,21 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                 _handleRefresh();
               } else if (value == 'update_profile') {
                 updateTeacher();
+              } else if (value == 'change_password') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+                ).then((result) {
+                  if (result == true && mounted) {
+                    _handleRefresh();
+                  }
+                });
               }
             },
             itemBuilder: (BuildContext context) => const [
               PopupMenuItem(value: 'refresh', child: Text('Refresh Data')),
               PopupMenuItem(value: 'update_profile', child: Text('Update Profile')),
+              PopupMenuItem(value: 'change_password', child: Text('Change Password')),
             ],
           ),
           IconButton(
@@ -233,9 +247,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                     builder: (context, constraints) {
                       return SingleChildScrollView(
                         child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            minHeight: constraints.maxHeight,
-                          ),
+                          constraints: BoxConstraints(minHeight: constraints.maxHeight),
                           child: IntrinsicHeight(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
@@ -323,9 +335,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                                           ),
                                         ),
                                       );
-                                    } else if (snapshot.hasData) {
-                                      // Name already set above
-                                      return const SizedBox.shrink();
                                     }
                                     return const SizedBox.shrink();
                                   },
@@ -343,19 +352,21 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                                       child: Row(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Icon(Icons.qr_code_scanner, color: Colors.white, size: 32),
+                                          const Icon(Icons.qr_code_scanner, color: Colors.white, size: 32),
                                           const SizedBox(width: 16),
-                                          Text(
+                                          const Text(
                                             'Scan QR Code',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 20,
                                               fontWeight: FontWeight.bold,
-                                          color: Colors.white,
+                                              color: Colors.white,
                                               letterSpacing: 1.2,
                                             ),
                                           ),
                                           if (_isLoading) ...[
-                                            const SizedBox(width: 16),
+                                            const
+
+ SizedBox(width: 16),
                                             const SizedBox(
                                               width: 22,
                                               height: 22,

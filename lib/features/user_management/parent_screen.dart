@@ -1,14 +1,16 @@
-// ignore_for_file: use_build_context_synchronously
 
+// ignore_for_file: use_build_context_synchronously
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:safenest/api_services/file.dart';
 import 'package:safenest/features/dashboard/update_sections/update_parent.dart';
+import 'package:safenest/features/user_management/change_password_screen.dart';
 
 class ParentDashboard extends StatefulWidget {
-  const ParentDashboard({super.key});
+  final String userId;
+  const ParentDashboard({super.key, required this.userId});
 
   @override
   State<ParentDashboard> createState() => _ParentDashboardState();
@@ -33,10 +35,10 @@ class _ParentDashboardState extends State<ParentDashboard> {
       _pickupLogsFuture = _fetchPickupLogs();
     });
     try {
-      final parentProfile = await ApiService.getParentProfile();
+      final parentProfile = await ApiService.getParentProfile(userId: widget.userId);
       if (mounted) {
         setState(() {
-          _parentName = parentProfile['fullName'] ?? 'Parent';
+          _parentName = parentProfile['fullname'] ?? 'Parent';
         });
       }
     } on ApiException catch (e) {
@@ -44,20 +46,25 @@ class _ParentDashboardState extends State<ParentDashboard> {
         setState(() {
           _errorMessage = _mapErrorToMessage(e);
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading profile: ${_mapErrorToMessage(e)}')),
+        );
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Failed to load profile: ${e.toString()}';
+          _errorMessage = 'Failed to load profile';
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load profile')),
+        );
       }
     }
   }
 
   Future<List<dynamic>> _fetchChildren() async {
     try {
-      final response = await ApiService.safeApiCall(() => ApiService.getChildren());
-      return List<Map<String, dynamic>>.from(response['children'] ?? []);
+      return await ApiService.safeApiCall(() => ApiService.getParentChildren(userId: widget.userId));
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -75,9 +82,21 @@ class _ParentDashboardState extends State<ParentDashboard> {
     try {
       return await ApiService.safeApiCall(() => ApiService.getPickupLogs());
     } on ApiException catch (e) {
-      throw ApiException('Failed to load pickup logs: ${e.message}', statusCode: e.statusCode);
+      if (mounted) {
+        setState(() => _errorMessage = _mapErrorToMessage(e));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load pickup logs: ${_mapErrorToMessage(e)}')),
+        );
+      }
+      return [];
     } catch (e) {
-      throw ApiException('Failed to load pickup logs: ${e.toString()}');
+      if (mounted) {
+        setState(() => _errorMessage = 'Failed to load pickup logs');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load pickup logs')),
+        );
+      }
+      return [];
     }
   }
 
@@ -115,7 +134,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Logout failed: ${e.toString()}')),
+          const SnackBar(content: Text('Logout failed: An unexpected error occurred')),
         );
       }
     }
@@ -153,10 +172,6 @@ class _ParentDashboardState extends State<ParentDashboard> {
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Close'),
               ),
-              TextButton(
-                onPressed: () => Navigator.pushNamed(context, '/parent-dashboard'),
-                child: const Text('Back to Dashboard'),
-              ),
             ],
           ),
         );
@@ -173,10 +188,10 @@ class _ParentDashboardState extends State<ParentDashboard> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'An unexpected error occurred: ${e.toString()}';
+          _errorMessage = 'An unexpected error occurred';
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('An unexpected error occurred: ${e.toString()}')),
+          const SnackBar(content: Text('An unexpected error occurred')),
         );
       }
     } finally {
@@ -198,36 +213,48 @@ class _ParentDashboardState extends State<ParentDashboard> {
         return 'Please log in again';
       case 'Child not found or not associated with this parent.':
         return 'The selected child is not associated with you';
+      case 'Parent not found.':
+        return 'Parent profile not found';
       default:
         return e.message;
     }
   }
 
-  void _navigateWithFade(Widget page) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => page,
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: animation,
-          child: child,
-        ),
+  void _updateParent() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UpdateParentScreen(userId: widget.userId),
       ),
-    );
+    ).then((result) {
+      if (result == true && mounted) {
+        _handleRefresh();
+      }
+    });
   }
 
-  Future<void> updateParent() async {
-    final result = await Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const UpdateParentScreen(),
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: animation,
-          child: child,
-        ),
+  void _addChild() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddChildScreen(parentId: widget.userId),
       ),
-    );
-    if (result == true && mounted) {
-      _handleRefresh();
-    }
+    ).then((result) {
+      if (result == true && mounted) {
+        _handleRefresh();
+      }
+    });
+  }
+
+  void _changePassword() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+    ).then((result) {
+      if (result == true && mounted) {
+        _handleRefresh();
+      }
+    });
   }
 
   @override
@@ -242,22 +269,28 @@ class _ParentDashboardState extends State<ParentDashboard> {
         backgroundColor: const Color(0xFF5271FF),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert, color: Colors.white),
             onSelected: (value) {
               if (value == 'refresh') {
                 _handleRefresh();
+              } else if (value == 'add_child') {
+                _addChild();
               } else if (value == 'update_profile') {
-                updateParent(); // Now uses fade transition
+                _updateParent();
+              } else if (value == 'change_password') {
+                _changePassword();
               }
             },
             itemBuilder: (BuildContext context) => const [
               PopupMenuItem(value: 'refresh', child: Text('Refresh Data')),
+              PopupMenuItem(value: 'add_child', child: Text('Add Child')),
               PopupMenuItem(value: 'update_profile', child: Text('Update Profile')),
+              PopupMenuItem(value: 'change_password', child: Text('Change Password')),
             ],
           ),
           IconButton(
             onPressed: () => _logout(context),
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, color: Colors.white),
           ),
         ],
       ),
@@ -466,8 +499,8 @@ class _ParentDashboardState extends State<ParentDashboard> {
                                           separatorBuilder: (_, __) => const SizedBox(height: 8),
                                           itemBuilder: (context, index) {
                                             final child = snapshot.data![index];
-                                            final childId = child['id']?.toString() ?? 'unknown';
-                                            final childName = child['fullName'] ?? 'Unknown Child';
+                                            final childId = child['childID']?.toString() ?? 'unknown';
+                                            final childName = child['fullname'] ?? 'Unknown Child';
                                             final childGrade = child['grade'] ?? 'Unknown Grade';
                                             return Card(
                                               child: ListTile(
@@ -575,6 +608,295 @@ class QRDisplayWidget extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class AddChildScreen extends StatefulWidget {
+  final String parentId;
+  const AddChildScreen({super.key, required this.parentId});
+
+  @override
+  State<AddChildScreen> createState() => _AddChildScreenState();
+}
+
+class _AddChildScreenState extends State<AddChildScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _fullnameController = TextEditingController();
+  final TextEditingController _gradeController = TextEditingController();
+  String? _selectedGrade;
+  String? _selectedGender;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _fullnameController.dispose();
+    _gradeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitForm() async {
+    if (_formKey.currentState!.validate()) {
+      try {
+        setState(() {
+          _isLoading = true;
+          _errorMessage = null;
+        });
+        await ApiService.safeApiCall(
+          () => ApiService.createChild(
+            fullName: _fullnameController.text.trim(),
+            gender: _selectedGender!,
+            parentId: int.parse(widget.parentId),
+            grade: _gradeController.text.trim(),
+          ),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Child added successfully!')),
+          );
+          Navigator.pop(context, true); // Return true to trigger refresh
+        }
+      } on ApiException catch (e) {
+        if (mounted) {
+          setState(() => _errorMessage = _mapErrorToMessage(e));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error adding child: $_errorMessage')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _errorMessage = 'An unexpected error occurred');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('An unexpected error occurred')),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _confirmSubmission() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Submission'),
+        content: const Text('Are you sure you want to add this child?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      _submitForm();
+    }
+  }
+
+  String _mapErrorToMessage(ApiException e) {
+    switch (e.message) {
+      case 'Network error':
+        return 'Please check your internet connection';
+      case 'Invalid grade. Use \'Grade 1\' to \'Grade 5\'.':
+        return 'Invalid grade. Use Grade 1 to Grade 5';
+      case 'Parent not found.':
+        return 'Parent ID not found';
+      case 'Unauthorized':
+        return 'Please log in again';
+      case 'Duplicate child':
+        return 'A child with this name already exists';
+      case 'Invalid gender':
+        return 'Invalid gender. Use Male, Female, or Other';
+      default:
+        return e.message;
+    }
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hintText,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(letterSpacing: 1, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: const Color(0xFFF0F0F0),
+            hintText: hintText,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+          validator: validator,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF5271FF),
+      appBar: AppBar(
+        title: const Text('Add New Child'),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF5271FF),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 3),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(40),
+                    topRight: Radius.circular(40),
+                  ),
+                ),
+                child: AbsorbPointer(
+                  absorbing: _isLoading,
+                  child: Opacity(
+                    opacity: _isLoading ? 0.6 : 1.0,
+                    child: SingleChildScrollView(
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (_errorMessage != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 16,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            _buildTextField(
+                              controller: _fullnameController,
+                              label: 'FULL NAME',
+                              hintText: 'Enter child\'s full name',
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter full name';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 20),
+                            DropdownButtonFormField<String>(
+                              value: _selectedGender,
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: const Color(0xFFF0F0F0),
+                                labelText: 'GENDER',
+                                labelStyle: const TextStyle(letterSpacing: 1, fontWeight: FontWeight.w500),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              ),
+                              items: ['Male', 'Female', 'Other']
+                                  .map((gender) => DropdownMenuItem(
+                                        value: gender,
+                                        child: Text(gender),
+                                      ))
+                                  .toList(),
+                              onChanged: _isLoading
+                                  ? null
+                                  : (value) => setState(() => _selectedGender = value),
+                              validator: (value) => value == null ? 'Please select gender' : null,
+                            ),
+                            const SizedBox(height: 20),
+                            DropdownButtonFormField<String>(
+                              value: _selectedGrade,
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: const Color(0xFFF0F0F0),
+                                labelText: 'GRADE',
+                                labelStyle: const TextStyle(letterSpacing: 1, fontWeight: FontWeight.w500),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              ),
+                              items: List.generate(
+                                5,
+                                (index) => DropdownMenuItem(
+                                  value: 'Grade ${index + 1}',
+                                  child: Text('Grade ${index + 1}'),
+                                ),
+                              ),
+                              onChanged: _isLoading
+                                  ? null
+                                  : (value) => setState(() {
+                                        _selectedGrade = value;
+                                        _gradeController.text = value ?? '';
+                                      }),
+                              validator: (value) => value == null ? 'Please select grade' : null,
+                            ),
+                            const SizedBox(height: 24),
+                            ElevatedButton(
+                              onPressed: _isLoading ? null : _confirmSubmission,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF5271FF),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const CircularProgressIndicator(color: Colors.white)
+                                  : const Text(
+                                      'Save Child',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

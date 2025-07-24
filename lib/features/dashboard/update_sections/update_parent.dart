@@ -1,8 +1,10 @@
+
 import 'package:flutter/material.dart';
 import 'package:safenest/api_services/file.dart';
 
 class UpdateParentScreen extends StatefulWidget {
-  const UpdateParentScreen({super.key});
+  final String userId;
+  const UpdateParentScreen({super.key, required this.userId});
 
   @override
   State<UpdateParentScreen> createState() => _UpdateParentScreenState();
@@ -15,6 +17,28 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadParentProfile();
+  }
+
+  Future<void> _loadParentProfile() async {
+    try {
+      final profile = await ApiService.getParentProfile(userId: widget.userId);
+      if (mounted) {
+        setState(() {
+          _phoneController.text = profile['phone'] ?? '';
+          _locationController.text = profile['location'] ?? '';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = 'Failed to load profile: ${e.toString()}');
+      }
+    }
+  }
+
   String _mapErrorToMessage(ApiException e) {
     switch (e.message) {
       case 'Invalid phone number':
@@ -23,6 +47,10 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
         return 'Please check your internet connection';
       case 'Unauthorized':
         return 'Please log in again';
+      case 'You can only update your own profile.':
+        return 'You can only update your own profile';
+      case 'Parent not found.':
+        return 'Profile not found';
       default:
         return e.message;
     }
@@ -44,15 +72,16 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
         });
         await ApiService.safeApiCall(
           () => ApiService.updateParent(
-            phone: _phoneController.text,
-            location: _locationController.text,
+            userId: widget.userId,
+            phone: _phoneController.text.trim(),
+            location: _locationController.text.trim(),
           ),
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Details Updated successfully!')),
+            const SnackBar(content: Text('Details updated successfully!')),
           );
-          Navigator.pop(context);
+          Navigator.pop(context, true); // Return true to trigger refresh in parent
         }
       } on ApiException catch (e) {
         if (mounted) {
@@ -79,7 +108,7 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirm Submission'),
-        content: const Text('Are you sure you want to update details?'),
+        content: const Text('Are you sure you want to update your details?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -96,6 +125,37 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
     if (confirmed == true && mounted) {
       _submitForm();
     }
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hintText,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(letterSpacing: 1, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: const Color(0xFFF0F0F0),
+            hintText: hintText,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+          validator: validator,
+        ),
+      ],
+    );
   }
 
   @override
@@ -122,75 +182,79 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
                     topRight: Radius.circular(40),
                   ),
                 ),
-                child: SingleChildScrollView(
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_errorMessage != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Text(
-                              _errorMessage!,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 16,
+                child: AbsorbPointer(
+                  absorbing: _isLoading,
+                  child: Opacity(
+                    opacity: _isLoading ? 0.6 : 1.0,
+                    child: SingleChildScrollView(
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (_errorMessage != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 16,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
                               ),
-                              textAlign: TextAlign.center,
+                            _buildTextField(
+                              controller: _phoneController,
+                              label: 'PHONE NUMBER',
+                              hintText: 'Enter phone number',
+                              keyboardType: TextInputType.phone,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter phone number';
+                                }
+                                if (!RegExp(r'^\+?\d{10,15}$').hasMatch(value)) {
+                                  return 'Enter a valid phone number (10-15 digits)';
+                                }
+                                return null;
+                              },
                             ),
-                          ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(
-                            labelText: 'Phone Number',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(16)),
+                            const SizedBox(height: 20),
+                            _buildTextField(
+                              controller: _locationController,
+                              label: 'LOCATION',
+                              hintText: 'Enter location',
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter location';
+                                }
+                                return null;
+                              },
                             ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter phone number';
-                            }
-                            if (!RegExp(r'^\+?\d{10,15}$').hasMatch(value)) {
-                              return 'Enter a valid phone number (10-15 digits)';
-                            }
-                            return null;
-                          },
+                            const SizedBox(height: 24),
+                            ElevatedButton(
+                              onPressed: _isLoading ? null : _confirmSubmission,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF5271FF),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const CircularProgressIndicator(color: Colors.white)
+                                  : const Text(
+                                      'Save Details',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _locationController,
-                          decoration: const InputDecoration(
-                            labelText: 'Location',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(16)),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter location';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: _isLoading ? null : _confirmSubmission,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF5271FF),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: _isLoading
-                              ? const CircularProgressIndicator(color: Colors.white)
-                              : const Text('Save Parent', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
