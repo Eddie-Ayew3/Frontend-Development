@@ -1,9 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:safenest/api_services/file.dart';
-import 'package:safenest/features/user_management/admin_screen.dart';
-import 'package:safenest/features/user_management/parent_screen.dart';
-import 'package:safenest/features/user_management/teacher_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -17,9 +14,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _fullnameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
   String? _selectedRole;
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true; // Separate control for confirm password
   String? _errorMessage;
 
   @override
@@ -27,11 +26,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _fullnameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_passwordController.text != _confirmPasswordController.text) {
+      setState(() => _errorMessage = 'Passwords do not match');
+      return;
+    }
     if (_selectedRole == null) {
       setState(() => _errorMessage = 'Please select a role');
       return;
@@ -46,47 +50,55 @@ class _SignUpScreenState extends State<SignUpScreen> {
             fullname: _fullnameController.text.trim(),
             email: _emailController.text.trim(),
             password: _passwordController.text.trim(),
-            role: _selectedRole!.toLowerCase(),
+            role: _selectedRole!,
           ));
 
-      final role = response['role'] as String;
+      final role = response['role'] as String?;
       final userId = response['userId']?.toString();
-      if (role.isEmpty) {
+      if (role == null || role.isEmpty) {
         throw ApiException('Invalid user role');
       }
       if (userId == null || userId.isEmpty) {
         throw ApiException('User ID is missing in response');
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(response['message'] ?? 'Registration successful!')),
-        );
+      await ApiService.setAuthToken(response['token']);
 
-        await ApiService.setAuthToken(response['token']);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Signup successful!')),
-        );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Registration successful!')),
+      );
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => _getDashboardForRole(role, userId),
-          ),
-        );
+      final route = _getDashboardRouteForRole(role);
+      if (await Navigator.pushReplacementNamed(context, route, arguments: userId) == null) {
+        setState(() => _errorMessage = 'Invalid navigation route');
       }
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _errorMessage = _mapErrorToMessage(e));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Signup failed: ${_mapErrorToMessage(e)}')),
+          SnackBar(
+            content: Text('Signup failed: ${_mapErrorToMessage(e)}'),
+            action: e.message == 'Network error'
+                ? SnackBarAction(
+                    label: 'Retry',
+                    onPressed: _handleSignUp,
+                  )
+                : null,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = 'An unexpected error occurred: ${e.toString()}');
+        setState(() => _errorMessage = 'An unexpected error occurred');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('An unexpected error occurred: ${e.toString()}')),
+          SnackBar(
+            content: const Text('An unexpected error occurred'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: _handleSignUp,
+            ),
+          ),
         );
       }
     } finally {
@@ -106,21 +118,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
         return 'Please check your internet connection';
       case 'Invalid request':
         return 'Please check your input fields';
+      case 'Server timeout':
+        return 'Server is not responding, please try again later';
       default:
         return e.message;
     }
   }
 
-  Widget _getDashboardForRole(String role, String userId) {
+  String _getDashboardRouteForRole(String role) {
     switch (role.toLowerCase()) {
-      case 'admin':
-        return const AdminDashboard();
       case 'parent':
-        return ParentDashboard(userId: userId);
+        return '/parent_dashboard';
       case 'teacher':
-        return TeacherDashboard(userId: userId);
+        return '/teacher_dashboard';
       default:
-        throw Exception('Invalid role: $role');
+        throw Exception('Invalid role: $role'); // Removed admin to match dropdown
     }
   }
 
@@ -179,6 +191,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         ),
       ),
       validator: validator,
+      onChanged: (_) => setState(() => _errorMessage = null), // Clear error on input
     );
   }
 
@@ -191,6 +204,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return TextFormField(
       controller: controller,
       obscureText: obscureText,
+      keyboardType: TextInputType.visiblePassword, // Improved keyboard type
       decoration: InputDecoration(
         filled: true,
         fillColor: const Color(0xFFF0F0F0),
@@ -215,11 +229,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
         if (value.length < 8) {
           return 'Password must be at least 8 characters';
         }
-        if (!RegExp(r'^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$').hasMatch(value)) {
-          return 'Must include uppercase, number, and special character';
-        }
         return null;
       },
+      onChanged: (_) => setState(() => _errorMessage = null), // Clear error on input
     );
   }
 
@@ -242,7 +254,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
       items: const [
         DropdownMenuItem(value: 'Parent', child: Text('Parent')),
         DropdownMenuItem(value: 'Teacher', child: Text('Teacher')),
-        DropdownMenuItem(value: 'Admin', child: Text('Admin')),
       ],
       onChanged: (value) => setState(() => _selectedRole = value),
       validator: (value) => value == null ? 'Please select a role' : null,
@@ -253,28 +264,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF5271FF),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              const SizedBox(height: 40),
-              Center(
-                child: Image.asset('assets/safenest.png', height: 120),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(40),
-                    topRight: Radius.circular(40),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: 1),
+                  Center(
+                    child: Image.asset('assets/safenest.png', height: 100),
                   ),
-                ),
-                child: AbsorbPointer(
-                  absorbing: _isLoading,
-                  child: Opacity(
-                    opacity: _isLoading ? 0.6 : 1.0,
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(40),
+                        topRight: Radius.circular(40),
+                      ),
+                    ),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -326,7 +339,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Please enter an email';
                               }
-                              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                              if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
                                   .hasMatch(value)) {
                                 return 'Enter a valid email address';
                               }
@@ -342,19 +355,25 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             controller: _passwordController,
                             hintText: 'Enter your password',
                             obscureText: _obscurePassword,
-                            onToggleVisibility: () =>
-                                setState(() => _obscurePassword = !_obscurePassword),
+                            onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
                           ),
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
                               _getPasswordStrengthText(_passwordController.text),
                               style: TextStyle(
-                                color: _getPasswordStrengthColor(
-                                    _passwordController.text),
+                                color: _getPasswordStrengthColor(_passwordController.text),
                                 fontSize: 12,
                               ),
                             ),
+                          ),
+                          const SizedBox(height: 20),
+                          _buildLabel('CONFIRM PASSWORD'),
+                          _buildPasswordField(
+                            controller: _confirmPasswordController,
+                            hintText: 'Confirm your password',
+                            obscureText: _obscureConfirmPassword,
+                            onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                           ),
                           const SizedBox(height: 24),
                           ElevatedButton(
@@ -367,8 +386,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
                             child: _isLoading
-                                ? const CircularProgressIndicator(
-                                    color: Colors.white)
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
                                 : const Text(
                                     'Sign up',
                                     style: TextStyle(
@@ -403,11 +428,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+          if (_isLoading)
+            const ModalBarrier(
+              dismissible: false,
+              color: Colors.black54,
+            ),
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator(color: Colors.white)),
+        ],
       ),
     );
   }

@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:safenest/api_services/file.dart';
 
@@ -25,17 +24,88 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
 
   Future<void> _loadParentProfile() async {
     try {
-      final profile = await ApiService.getParentProfile(userId: widget.userId);
+      setState(() => _isLoading = true);
+      final profile = await ApiService.safeApiCall(() => 
+        ApiService.getParentProfile(userId: widget.userId)
+      );
+      
       if (mounted) {
         setState(() {
           _phoneController.text = profile['phone'] ?? '';
           _locationController.text = profile['location'] ?? '';
+          _isLoading = false;
         });
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = _mapErrorToMessage(e);
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $_errorMessage')),
+        );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = 'Failed to load profile: ${e.toString()}');
+        setState(() {
+          _errorMessage = 'Failed to load profile';
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load profile')),
+        );
       }
+    }
+  }
+
+  Future<void> _submitForm() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await ApiService.safeApiCall(() => ApiService.updateParent(
+        userId: widget.userId,
+        phone: _phoneController.text.trim(),
+        location: _locationController.text.trim(),
+      ));
+
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(response['message'] ),backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pushReplacementNamed(
+        context,
+        '/parent_dashboard',
+        arguments: widget.userId,
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = _mapErrorToMessage(e));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating details: $_errorMessage'),
+            action: e.message.contains('Network') 
+              ? SnackBarAction(label: 'Retry', onPressed: _submitForm)
+              : null,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = 'An unexpected error occurred');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('An unexpected error occurred')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -47,83 +117,12 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
         return 'Please check your internet connection';
       case 'Unauthorized':
         return 'Please log in again';
-      case 'You can only update your own profile.':
+      case 'You can only update your own profile':
         return 'You can only update your own profile';
-      case 'Parent not found.':
+      case 'Parent not found':
         return 'Profile not found';
       default:
         return e.message;
-    }
-  }
-
-  @override
-  void dispose() {
-    _phoneController.dispose();
-    _locationController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      try {
-        setState(() {
-          _isLoading = true;
-          _errorMessage = null;
-        });
-        await ApiService.safeApiCall(
-          () => ApiService.updateParent(
-            userId: widget.userId,
-            phone: _phoneController.text.trim(),
-            location: _locationController.text.trim(),
-          ),
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Details updated successfully!')),
-          );
-          Navigator.pop(context, true); // Return true to trigger refresh in parent
-        }
-      } on ApiException catch (e) {
-        if (mounted) {
-          setState(() => _errorMessage = _mapErrorToMessage(e));
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error updating details: $_errorMessage')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() => _errorMessage = 'An unexpected error occurred');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('An unexpected error occurred')),
-          );
-        }
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _confirmSubmission() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Submission'),
-        content: const Text('Are you sure you want to update your details?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      _submitForm();
     }
   }
 
@@ -132,12 +131,15 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
     required String label,
     required String hintText,
     TextInputType? keyboardType,
-    String? Function(String?)? validator,
+    required String? Function(String?) validator,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(letterSpacing: 1, fontWeight: FontWeight.w500)),
+        Text(
+          label,
+          style: const TextStyle(letterSpacing: 1, fontWeight: FontWeight.w500),
+        ),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -163,29 +165,36 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF5271FF),
       appBar: AppBar(
-        title: const Text('Update Details'),
+        title: const Text('Update Parent Details'),
         centerTitle: true,
         backgroundColor: const Color(0xFF5271FF),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pushReplacementNamed(
+            context,
+            '/parent_dashboard',
+            arguments: widget.userId,
+          ),
+        ),
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 3),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(40),
-                    topRight: Radius.circular(40),
-                  ),
-                ),
-                child: AbsorbPointer(
-                  absorbing: _isLoading,
-                  child: Opacity(
-                    opacity: _isLoading ? 0.6 : 1.0,
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(40),
+                        topRight: Radius.circular(40),
+                      ),
+                    ),
                     child: SingleChildScrollView(
                       child: Form(
                         key: _formKey,
@@ -207,14 +216,14 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
                             _buildTextField(
                               controller: _phoneController,
                               label: 'PHONE NUMBER',
-                              hintText: 'Enter phone number',
+                              hintText: 'Enter phone number (e.g., +233XXXXXXXXX)',
                               keyboardType: TextInputType.phone,
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
                                   return 'Please enter phone number';
                                 }
-                                if (!RegExp(r'^\+?\d{10,15}$').hasMatch(value)) {
-                                  return 'Enter a valid phone number (10-15 digits)';
+                                if (!RegExp(r'^\+233\d{9}$').hasMatch(value)) {
+                                  return 'Enter a valid Ghana phone number';
                                 }
                                 return null;
                               },
@@ -233,7 +242,7 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
                             ),
                             const SizedBox(height: 24),
                             ElevatedButton(
-                              onPressed: _isLoading ? null : _confirmSubmission,
+                              onPressed: _isLoading ? null : _submitForm,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF5271FF),
                                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -258,10 +267,15 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+          if (_isLoading)
+            const ModalBarrier(
+              dismissible: false,
+              color: Colors.black54,
+            ),
+        ],
       ),
     );
   }

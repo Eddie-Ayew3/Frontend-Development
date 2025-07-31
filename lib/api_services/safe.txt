@@ -1,0 +1,570 @@
+/// Fetches the parent's profile
+
+  /// Fetches the parent's children
+  /*static Future<List<Map<String, dynamic>>> getParentChildren({String? userId}) async {
+    try {
+      final token = await _getAuthToken();
+      final uri = userId != null
+          ? Uri.parse('$_baseUrl/parents/$userId/children') // Adjusted path for specific user
+          : Uri.parse('$_baseUrl/parent/children'); // Default path for current user
+      final response = await http.get(
+        uri, // Adjusted path
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((item) => {
+              'id': item['id']?.toString() ?? '',
+              'fullName': item['fullName']?.toString() ?? '',
+              'grade': item['grade']?.toString() ?? '',
+            }).toList();
+      } else if (response.statusCode == 401) {
+        throw ApiException('Unauthorized', statusCode: response.statusCode);
+      } else {
+        throw ApiException('Failed to fetch children', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+
+  /// Fetches the admin's profile
+  static Future<Map<String, dynamic>> getAdminProfile() async {
+    try {
+      final token = await _getAuthToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/admin/profile'), // Adjusted path
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'fullName': data['fullName'] ?? ''};
+      } else if (response.statusCode == 401) {
+        throw ApiException('Unauthorized', statusCode: response.statusCode);
+      } else {
+        throw ApiException('Failed to fetch admin profile', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+
+
+  /// Fetches admin dashboard statistics
+  static Future<List<Map<String, dynamic>>> getAdminStats() async {
+    try {
+      final token = await _getAuthToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/admin/stats'), // Adjusted path
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((item) => {
+              'label': item['label']?.toString() ?? '',
+              'count': item['count'] ?? 0,
+              'icon': _mapIcon(item['icon']?.toString() ?? 'default'),
+            }).toList();
+      } else if (response.statusCode == 401) {
+        throw ApiException('Unauthorized', statusCode: response.statusCode);
+      } else {
+        throw ApiException('Failed to fetch admin stats', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+
+  /// Fetches pickup logs
+  static Future<List<dynamic>> getPickupLogs() async {
+    try {
+      final token = await _getAuthToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/pickup/logs'), // Adjusted path
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((item) => {
+              'fullName': item['fullName']?.toString() ?? '',
+              'parentName': item['parentName']?.toString() ?? '',
+              'verifiedAt': item['verifiedAt']?.toString() ?? '',
+              'teacherName': item['teacherName']?.toString() ?? 'Unknown Teacher',
+              'timestamp': item['verifiedAt']?.toString() ?? '',
+            }).toList();
+      } else if (response.statusCode == 401) {
+        throw ApiException('Unauthorized', statusCode: response.statusCode);
+      } else {
+        throw ApiException('Failed to fetch pickup logs', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+
+  /// Verifies a QR code for child pickup
+  static Future<Map<String, dynamic>> verifyQRCode(String qrCode) async {
+    try {
+      final token = await _getAuthToken();
+      final response = await http.post(
+        Uri.parse('$_baseUrl/qr/verify'), // Adjusted path
+        headers: _getHeaders(token),
+        body: jsonEncode({
+          'qrCode': qrCode,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          'childName': data['childName'] ?? '',
+          'parentName': data['parentName'] ?? '',
+          'message': 'Pickup verified for ${data['childName'] ?? 'child'} by ${data['parentName'] ?? 'parent'}',
+        };
+      } else if (response.statusCode == 400) {
+        final errorData = jsonDecode(response.body);
+        throw ApiException(errorData['message'] ?? 'Invalid request', statusCode: response.statusCode);
+      } else if (response.statusCode == 404) {
+        throw ApiException('Invalid QR code', statusCode: response.statusCode);
+      } else {
+        throw ApiException('Failed to verify QR code', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+
+// lib/api_services/file.dart (partial update)
+static Future<Map<String, dynamic>> getChildren() async {
+  try {
+    final token = await _getAuthToken();
+    final response = await http.get(
+      Uri.parse('$_baseUrl/children'), // Matches /v1/children for parent’s children
+      headers: _getHeaders(token),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return {'children': data['children'] ?? []}; // Adjust based on backend response
+    } else {
+      throw ApiException('Failed to fetch children', statusCode: response.statusCode);
+    }
+  } catch (e) {
+    if (e is ApiException) {
+      rethrow;
+    }
+    throw ApiException('Failed to connect to the server');
+  }
+}
+
+static Future<Map<String, dynamic>> generateQRCode(int childId) async {
+  try {
+    final token = await _getAuthToken();
+    final response = await http.post(
+      Uri.parse('$_baseUrl/children/generate?childId=$childId'), // Matches /v1/children/generate
+      headers: _getHeaders(token),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return {'qrCode': data['qrCode'] ?? ''};
+    } else if (response.statusCode == 400) {
+      final errorData = jsonDecode(response.body);
+      throw ApiException(errorData['message'] ?? 'Invalid request', statusCode: response.statusCode);
+    } else if (response.statusCode == 500) {
+      throw ApiException('Failed to generate QR code', statusCode: response.statusCode);
+    } else {
+      throw ApiException('Unexpected error', statusCode: response.statusCode);
+    }
+  } catch (e) {
+    if (e is ApiException) {
+      rethrow;
+    }
+    throw ApiException('Failed to connect to the server');
+  }
+}
+  /// Generates a QR code for a child
+
+  
+ 
+  /// Creates a new parent
+  static Future<void> createParent({
+   required String fullname,
+   required String email, 
+   required String phone, 
+   required String location}) async {
+    try {
+      final token = await _getAuthToken();
+      final response = await http.post(
+        Uri.parse('$_baseUrl/parents'), // Adjusted path
+        headers: _getHeaders(token),
+        body: jsonEncode(
+          {
+            'fullname': fullname,
+            'email': email,
+            'phone': phone,
+            'location': location,
+          },
+        ),
+      );
+
+      if (response.statusCode == 201) {
+        return;
+      } else if (response.statusCode == 400) {
+        final errorData = jsonDecode(response.body);
+        throw ApiException(errorData['message'] ?? 'Invalid request', statusCode: response.statusCode);
+      } else if (response.statusCode == 409) {
+        throw ApiException('Duplicate email', statusCode: response.statusCode);
+      } else if (response.statusCode == 422) {
+        throw ApiException('Invalid phone number', statusCode: response.statusCode);
+      } else {
+        throw ApiException('Failed to create parent', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+  static Future<Map<String, dynamic>> getParentProfile({required String userId}) async {
+  try {
+    final token = await _getAuthToken();
+    final response = await http.get(
+      Uri.parse('$_baseUrl/parents/$userId'),
+      headers: _getHeaders(token),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return {
+        'phone': data['phone']?.toString() ?? '',
+        'location': data['location']?.toString() ?? '',
+      };
+    } else if (response.statusCode == 401) {
+      throw ApiException('Unauthorized', statusCode: response.statusCode);
+    } else if (response.statusCode == 404) {
+      throw ApiException('Parent not found.', statusCode: response.statusCode);
+    } else {
+      throw ApiException('Failed to fetch parent profile', statusCode: response.statusCode);
+    }
+  } catch (e) {
+    if (e is ApiException) {
+      rethrow;
+    }
+    throw ApiException('Failed to connect to the server');
+  }
+}
+
+  /// Creates a new teacher
+  static Future<void> createTeacher({
+    required String fullname,
+    required String email,
+    required String phone,
+    required String grade,
+  }
+
+  ) async {
+    try {
+      final token = await _getAuthToken();
+      final response = await http.post(
+        Uri.parse('$_baseUrl/teachers'), // Adjusted path
+        headers: _getHeaders(token),
+        body: jsonEncode({
+          'fullname': fullname,
+          'email': email,
+          'phone': phone,
+          'grade': grade,
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        return;
+      } else if (response.statusCode == 400) {
+        final errorData = jsonDecode(response.body);
+        throw ApiException(errorData['message'] ?? 'Invalid request', statusCode: response.statusCode);
+      } else if (response.statusCode == 409) {
+        throw ApiException('Duplicate email', statusCode: response.statusCode);
+      } else if (response.statusCode == 422) {
+        throw ApiException('Invalid phone number', statusCode: response.statusCode);
+      } else {
+        throw ApiException('Failed to create teacher', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+
+  /// Updates teacher details
+ static Future<void> updateTeacher({required String userId, String? phone, String? grade}) async {
+  try {
+    final token = await _getAuthToken();
+    final body = {
+      if (phone != null && phone.isNotEmpty) 'phone': phone,
+      if (grade != null && grade.isNotEmpty) 'grade': grade,
+    };
+    if (body.isEmpty) return; // No updates to send
+    final response = await http.put(
+      Uri.parse('$_baseUrl/teachers/$userId'),
+      headers: _getHeaders(token),
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      throw ApiException('Unauthorized', statusCode: response.statusCode);
+    } else if (response.statusCode == 403) {
+      throw ApiException('You can only update your own profile.', statusCode: response.statusCode);
+    } else if (response.statusCode == 404) {
+      throw ApiException('Teacher not found.', statusCode: response.statusCode);
+    } else if (response.statusCode == 400) {
+      final errorData = jsonDecode(response.body);
+      throw ApiException(errorData['message'] ?? 'Invalid request', statusCode: response.statusCode);
+    } else {
+      throw ApiException('Failed to update teacher.', statusCode: response.statusCode);
+    }
+  } catch (e) {
+    if (e is ApiException) {
+      rethrow;
+    }
+    throw ApiException('Failed to connect to the server');
+  }
+}
+
+static Future<Map<String, dynamic>> getTeacherProfile({required String userId}) async {
+  try {
+    final token = await _getAuthToken();
+    final response = await http.get(
+      Uri.parse('$_baseUrl/teachers/$userId'),
+      headers: _getHeaders(token),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return {
+        'phone': data['phone']?.toString() ?? '',
+        'grade': data['grade']?.toString() ?? '',
+      };
+    } else if (response.statusCode == 401) {
+      throw ApiException('Unauthorized', statusCode: response.statusCode);
+    } else if (response.statusCode == 404) {
+      throw ApiException('Teacher not found.', statusCode: response.statusCode);
+    } else {
+      throw ApiException('Failed to fetch teacher profile', statusCode: response.statusCode);
+    }
+  } catch (e) {
+    if (e is ApiException) {
+      rethrow;
+    }
+    throw ApiException('Failed to connect to the server');
+  }
+}
+
+  /// Fetches list of parents
+  static Future<List<Map<String, dynamic>>> getParents() async {
+    try {
+      final token = await _getAuthToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/parents'), // Adjusted path
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.cast<Map<String, dynamic>>();
+      } else if (response.statusCode == 400) {
+        final errorData = jsonDecode(response.body);
+        throw ApiException(errorData['message'] ?? 'Invalid request', statusCode: response.statusCode);
+      } else {
+        throw ApiException('Failed to fetch parents', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+
+  /// Creates a new child
+  static Future<void> createChild({
+    required String fullName,
+    String? email,
+    required String grade,
+    required String gender,
+    required int parentId,
+  }) async {
+    try {
+      // Retrieve the authentication token from secure storage
+      final token = await _getAuthToken();
+      // Send POST request to create a new child
+      final response = await http.post(
+        Uri.parse('$_baseUrl/children'), // API endpoint for creating children
+        headers: _getHeaders(token),     // Include auth headers
+        body: jsonEncode({
+          'fullName': fullName,          // Child's full name
+          'grade': grade,                // Child's grade
+          'gender': gender,              // Child's gender
+          'parentId': parentId,          // Associated parent ID
+          if (email != null && email.isNotEmpty) 'email': email, // Optional email field
+        }),
+      );
+
+      // Handle response status codes
+      if (response.statusCode == 201) {
+        // Child created successfully
+        return;
+      } else if (response.statusCode == 400) {
+        // Bad request, show server error message if available
+        final errorData = jsonDecode(response.body);
+        throw ApiException(errorData['message'] ?? 'Invalid request', statusCode: response.statusCode);
+      } else if (response.statusCode == 409) {
+        // Child already exists
+        throw ApiException('Child Already exists', statusCode: response.statusCode);
+      } else if (response.statusCode == 422) {
+        // Invalid data provided
+        throw ApiException('Invalid Data', statusCode: response.statusCode);
+      } else {
+        // Other errors
+        throw ApiException('Failed to create child', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      // Rethrow known API exceptions, otherwise throw a generic error
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+  }
+
+  static Future<void> changePassword({required String currentPassword, required String newPassword}) async {
+  try {
+    final token = await _getAuthToken();
+    final response = await http.put(
+      Uri.parse('$_baseUrl/auth/change-password'),
+      headers: _getHeaders(token),
+      body: jsonEncode({
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      throw ApiException('Unauthorized', statusCode: response.statusCode);
+    } else if (response.statusCode == 400) {
+      final errorData = jsonDecode(response.body);
+      throw ApiException(errorData['message'] ?? 'Invalid request', statusCode: response.statusCode);
+    } else {
+      throw ApiException('Failed to change password', statusCode: response.statusCode);
+    }
+  } catch (e) {
+    if (e is ApiException) {
+      rethrow;
+    }
+    throw ApiException('Failed to connect to the server');
+  }
+}
+
+  /// Maps icon string to IconData
+  static IconData _mapIcon(String iconName) {
+    switch (iconName.toLowerCase()) {
+      case 'person':
+        return Icons.person;
+      case 'child':
+        return Icons.child_care;
+      case 'pickup':
+        return Icons.directions_car;
+      case 'school':
+        return Icons.school;
+      default:
+        return Icons.info;
+    }
+  }*/
+
+  
+  /// Clears the authentication token for logout
+  static Future<void> logout() async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) {
+        await _storage.delete(key: 'auth_token');
+        return;
+      }
+      final response = await http.post(
+        Uri.parse('$_baseUrl/auth/logout'), // Adjusted path
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        await _storage.delete(key: 'auth_token');
+        return;
+      } else {
+        throw ApiException('Failed to logout', statusCode: response.statusCode);
+      }
+    } catch (e) {
+      await _storage.delete(key: 'auth_token');
+      if (e is ApiException) {
+        rethrow;
+      }
+      throw ApiException('Failed to connect to the server');
+    }
+    /// Updates parent details
+  static Future<void> updateParent({required String userId, String? phone, String? location}) async {
+  try {
+    final token = await _getAuthToken();
+    final body = {
+      if (phone != null && phone.isNotEmpty) 'phone': phone,
+      if (location != null && location.isNotEmpty) 'location': location,
+    };
+    if (body.isEmpty) return; // No updates to send
+    final response = await http.put(
+      Uri.parse('$_baseUrl/parents/$userId'),
+      headers: _getHeaders(token),
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      throw ApiException('Unauthorized', statusCode: response.statusCode);
+    } else if (response.statusCode == 403) {
+      throw ApiException('You can only update your own profile.', statusCode: response.statusCode);
+    } else if (response.statusCode == 404) {
+      throw ApiException('Parent not found.', statusCode: response.statusCode);
+    } else {
+      throw ApiException('Failed to update parent.', statusCode: response.statusCode);
+    }
+  } catch (e) {
+    if (e is ApiException) {
+      rethrow;
+    }
+    throw ApiException('Failed to connect to the server');
+  }
+}
+
+  }
