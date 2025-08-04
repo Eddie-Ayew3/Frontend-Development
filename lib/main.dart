@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:safenest/accounts/login_screen.dart';
 import 'package:safenest/accounts/signup_screen.dart';
-import 'package:safenest/data_input/new_sections/new_parent.dart';
-import 'package:safenest/data_input/new_sections/new_teacher.dart';
-import 'package:safenest/data_input/update_details/update_parent.dart';
-import 'package:safenest/data_input/update_details/update_teacher.dart';
+import 'package:safenest/data_entries/add_child.dart';
+import 'package:safenest/data_entries/add_parent.dart';
+import 'package:safenest/data_entries/add_teacher.dart';
+import 'package:safenest/data_entries/update_parent.dart';
+import 'package:safenest/data_entries/update_teacher.dart';
 import 'package:safenest/user_management/admin_dashboard.dart';
 import 'package:safenest/user_management/parent_dashboard.dart';
 import 'package:safenest/user_management/teacher_dashboard.dart';
-
+import 'package:safenest/accounts/auth_form.dart';
 
 void main() {
   runApp(const MyApp());
@@ -28,37 +29,110 @@ class MyApp extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF5271FF),
             foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 16),
           ),
         ),
-        visualDensity: VisualDensity.adaptivePlatformDensity, // Ensure consistent UI
+        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       initialRoute: '/login',
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/login':
+            return MaterialPageRoute(builder: (_) => const LoginScreen());
+          case '/register':
+            return MaterialPageRoute(builder: (_) => const SignUpScreen());
+            
+          // Dashboard routes with full user data
+          case '/admin_dashboard':
+            final args = settings.arguments as Map<String, dynamic>? ?? {};
+            return MaterialPageRoute(
+              builder: (_) => AdminDashboard(
+                email: args['email'] ?? '',
+                fullname: args['fullname'] ?? '',
+              ),
+            );
+            
+          case '/parent_dashboard':
+            final args = settings.arguments as Map<String, dynamic>? ?? {};
+            return MaterialPageRoute(
+              builder: (_) => ParentDashboard(
+                roleId: args['roleId'] ?? '',
+                email: args['email'] ?? '',
+                fullname: args['fullname'] ?? '',
+                token: args['token'] ?? '',
+              ),
+            );
+            
+          case '/teacher_dashboard':
+            final args = settings.arguments as Map<String, dynamic>? ?? {};
+            return MaterialPageRoute(
+              builder: (_) => TeacherDashboard(
+                roleId: args['roleId'] ?? '',
+                email: args['email'] ?? '',
+                fullname: args['fullname'] ?? '',
+                token: args['token'] ?? '',
+              ),
+            );
+            
+          // Feature routes
+          case '/new_child':
+            final args = settings.arguments as Map<String, dynamic>? ?? {};
+            return MaterialPageRoute(
+              builder: (_) => AddChildScreen(
+                parentId: args['parentId'] ?? '',
+                token: args['token'] ?? '',
+              ),
+            );
+            
+          case '/new_parent':
+            final token = settings.arguments as String? ?? '';
+            return MaterialPageRoute(
+              builder: (_) => AddParentScreen(token: token),
+            );
+            
+          case '/new_teacher':
+            final token = settings.arguments as String? ?? '';
+            return MaterialPageRoute(
+              builder: (_) => AddTeacherScreen(token: token),
+            );
+            
+          case '/update_parent':
+            final args = settings.arguments as Map<String, dynamic>? ?? {};
+            return MaterialPageRoute(
+              builder: (_) => UpdateParentScreen(
+                userId: args['userId'] ?? '',
+                token: args['token'] ?? '',
+              ),
+            );
+            
+          case '/update_teacher':
+            final args = settings.arguments as Map<String, dynamic>? ?? {};
+            return MaterialPageRoute(
+              builder: (_) => UpdateTeacherScreen(
+                userId: args['userId'] ?? '',
+                token: args['token'] ?? '',
+              ),
+            );
+            
+          default:
+            return MaterialPageRoute(
+              builder: (_) => Scaffold(
+                body: Center(
+                  child: Text('Route ${settings.name} not found',
+                    style: const TextStyle(fontSize: 18)),
+                ),
+              ),
+            );
+        }
+      },
+      // Optional: Add named routes for better clarity
       routes: {
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const SignUpScreen(),
-        '/admin_dashboard': (context) => const AdminDashboard(), // Placeholder
-        '/parent_dashboard': (context) => const ParentDashboard(userId: '',), // Placeholder
-        '/teacher_dashboard': (context) => const TeacherDashboard(userId: '',), // Placeholder
-        '/new_parent': (context)=> const AddParentScreen(),
-        '/new_teacher':(context)=> const AddTeacherScreen(),
-        '/update_parent': (context)=> const UpdateParentScreen(userId: '',),
-        '/update_teacher': (context)=> const UpdateTeacherScreen(userId: '',),
-
       },
-      onUnknownRoute: (settings) => MaterialPageRoute(
-        builder: (context) => Scaffold(
-          body: Center(
-            child: Text('Route ${settings.name} not found'),
-          ),
-        ),
-      ),
     );
   }
 }
-
-
-// Placeholder widgets for dashboard screens
-
-
-
-
