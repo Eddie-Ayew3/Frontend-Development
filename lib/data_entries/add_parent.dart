@@ -1,32 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:safenest/api/New_api.dart';
 
-class AddTeacherScreen extends StatefulWidget {
+class AddParentScreen extends StatefulWidget {
   final String token;
 
-  const AddTeacherScreen({
+  const AddParentScreen({
     super.key,
     required this.token,
   });
 
   @override
-  State<AddTeacherScreen> createState() => _AddTeacherScreenState();
+  State<AddParentScreen> createState() => _AddParentScreenState();
 }
 
-class _AddTeacherScreenState extends State<AddTeacherScreen> {
+class _AddParentScreenState extends State<AddParentScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _fullnameController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
-  String? _selectedGrade;
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _locationController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
 
   @override
   void dispose() {
     _fullnameController.dispose();
-    _phoneController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
+    _locationController.dispose();
     super.dispose();
   }
 
@@ -39,44 +40,69 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     });
 
     try {
-      await ApiService.safeApiCall(() => ApiService.createTeacher(
+      await ApiService.safeApiCall(() => ApiService.createParent(
             token: widget.token,
             fullname: _fullnameController.text.trim(),
-            phone: _phoneController.text.trim(),
             email: _emailController.text.trim(),
-            grade: _selectedGrade!,
+            phone: _phoneController.text.trim(),
+            location: _locationController.text.trim(),
           ));
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Teacher added successfully!')),
-      );
+      _showSuccessDialog('Parent added successfully!');
       Navigator.pop(context);
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _errorMessage = _mapErrorToMessage(e));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error adding teacher: $_errorMessage'),
-            action: e.message == 'Network error'
-                ? SnackBarAction(label: 'Retry', onPressed: _submitForm)
-                : null,
-          ),
-        );
+        _showErrorDialog(_errorMessage!);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _errorMessage = 'An unexpected error occurred');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('An unexpected error occurred'),
-            action: SnackBarAction(label: 'Retry', onPressed: _submitForm),
-          ),
-        );
+        _showErrorDialog(_errorMessage!);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _showSuccessDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Success'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showErrorDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              _submitForm(); // Retry
+            },
+            child: const Text('Retry'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmSubmission() async {
@@ -84,7 +110,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirm Submission'),
-        content: const Text('Are you sure you want to add this teacher?'),
+        content: const Text('Are you sure you want to add this parent?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -110,7 +136,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       case 'Duplicate email':
         return 'This email is already registered';
       case 'Invalid phone number':
-        return 'Please enter a valid phone number';
+        return 'Please enter a valid Ghana phone number (e.g., +233XXXXXXXXX)';
       case 'Unauthorized':
         return 'You are not authorized to perform this action';
       default:
@@ -123,13 +149,19 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     required String label,
     TextInputType? keyboardType,
     required String? Function(String?) validator,
+    IconData? prefixIcon,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
-        border: const OutlineInputBorder(),
+        prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        filled: true,
+        fillColor: Colors.grey[50],
       ),
       validator: validator,
     );
@@ -138,49 +170,29 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Teacher')),
+      appBar: AppBar(
+        title: const Text('Add Parent'),
+        backgroundColor: const Color(0xFF5271FF),
+        foregroundColor: Colors.white,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
-          child: Column(
+          child: ListView(
             children: [
-              if (_errorMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
               _buildTextField(
                 controller: _fullnameController,
                 label: 'Full Name',
+                prefixIcon: Icons.person_outline,
                 validator: (value) =>
                     value == null || value.isEmpty ? 'Please enter full name' : null,
               ),
               const SizedBox(height: 16),
               _buildTextField(
-                controller: _phoneController,
-                label: 'Phone Number',
-                keyboardType: TextInputType.phone,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter phone number';
-                  }
-                  if (!RegExp(r'^\+233\d{9}$').hasMatch(value)) {
-                    return 'Enter a valid Ghana phone number (e.g., +233XXXXXXXXX)';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildTextField(
                 controller: _emailController,
                 label: 'Email',
+                prefixIcon: Icons.email_outlined,
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -194,30 +206,53 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedGrade,
-                decoration: const InputDecoration(
-                  labelText: 'Assigned Grade',
-                  border: OutlineInputBorder(),
-                ),
-                items: List.generate(
-                  6,
-                  (index) => DropdownMenuItem(
-                    value: 'Grade ${index + 1}',
-                    child: Text('Grade ${index + 1}'),
-                  ),
-                ),
-                onChanged: _isLoading
-                    ? null
-                    : (value) => setState(() => _selectedGrade = value),
-                validator: (value) => value == null ? 'Please select grade' : null,
+              _buildTextField(
+                controller: _phoneController,
+                label: 'Phone Number',
+                prefixIcon: Icons.phone_outlined,
+                keyboardType: TextInputType.phone,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter phone number';
+                  }
+                  if (!RegExp(r'^\+233\d{9}$').hasMatch(value)) {
+                    return 'Enter a valid Ghana phone number (e.g., +233XXXXXXXXX)';
+                  }
+                  return null;
+                },
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+              _buildTextField(
+                controller: _locationController,
+                label: 'Location',
+                prefixIcon: Icons.location_on_outlined,
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Please enter location' : null,
+              ),
+              const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _isLoading ? null : _confirmSubmission,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF5271FF),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : const Text('Save Teacher'),
+                    ? const SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 3,
+                        ),
+                      )
+                    : const Text(
+                        'Save Parent',
+                        style: TextStyle(fontSize: 16),
+                      ),
               ),
             ],
           ),
