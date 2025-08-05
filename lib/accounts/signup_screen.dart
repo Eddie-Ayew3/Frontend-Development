@@ -17,63 +17,61 @@ class _SignUpScreenState extends State<SignUpScreen> {
   String _selectedRole = 'Parent';
   bool _isLoading = false;
   String? _errorMessage;
+  bool _obscurePassword = true; // Add this line
 
+  Future<void> _handleSignUp() async {
+    if (!_formKey.currentState!.validate()) return;
 
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-Future<void> _handleSignUp() async {
-  if (!_formKey.currentState!.validate()) return;
+    try {
+      final response = await ApiService.register(
+        fullname: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        role: _selectedRole,
+      );
 
-  setState(() {
-    _isLoading = true;
-    _errorMessage = null;
-  });
+      if (!mounted) return;
+      
+      final role = _selectedRole.toLowerCase();
+      final roleId = response['roleId']?.toString() ?? '';
 
-  try {
-    final response = await ApiService.register(
-      fullname: _nameController.text.trim(),
-      email: _emailController.text.trim(),
-      password: _passwordController.text.trim(),
-      role: _selectedRole,
-    );
+      if (roleId.isEmpty) {
+        throw ApiException('Registration incomplete - no roleId received');
+      }
 
-    if (!mounted) return;
-    
-    final role = _selectedRole.toLowerCase();
-    final roleId = response['roleId']?.toString() ?? '';
+      const allowedRoles = {
+        'parent': '/parent_dashboard',
+        'teacher': '/teacher_dashboard',
+      };
 
-    if (roleId.isEmpty) {
-      throw ApiException('Registration incomplete - no roleId received');
+      if (!allowedRoles.containsKey(role)) {
+        throw ApiException('Unauthorized role: $role');
+      }
+
+      Navigator.pushReplacementNamed(
+        context,
+        allowedRoles[role]!,
+        arguments: {
+          'role': role,
+          'roleId': roleId,
+          'email': _emailController.text.trim(),
+          'fullname': _nameController.text.trim(),
+        },
+      );
+
+    } on ApiException catch (e) {
+      setState(() => _errorMessage = _parseError(e));
+    } catch (e) {
+      setState(() => _errorMessage = 'An unexpected error occurred');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-
-    // Define allowed roles and their dashboards
-    const allowedRoles = {
-      'parent': '/parent_dashboard',
-      'teacher': '/teacher_dashboard',
-    };
-
-    if (!allowedRoles.containsKey(role)) {
-      throw ApiException('Unauthorized role: $role');
-    }
-
-    Navigator.pushReplacementNamed(
-      context,
-      allowedRoles[role]!,
-      arguments: {
-        'role': role,
-        'roleId': roleId,
-        'email': _emailController.text.trim(),
-        'fullname': _nameController.text.trim(),
-      },
-    );
-
-  } on ApiException catch (e) {
-    setState(() => _errorMessage = _parseError(e));
-  } catch (e) {
-    setState(() => _errorMessage = 'An unexpected error occurred');
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
   }
-}
 
   String _parseError(ApiException e) {
     if (e.message.contains('400')) return 'Invalid input data';
@@ -93,13 +91,19 @@ Future<void> _handleSignUp() async {
   Widget build(BuildContext context) {
     return AuthForm(
       title: 'SafeNest',
-      subtitle: 'Create a new account',
+      subtitle: 'Create a new account to get started',
       actionText: 'Sign Up',
       isLoading: _isLoading,
       errorMessage: _errorMessage,
       onAction: _handleSignUp,
       alternateActionText: 'Already have an account? Login',
       onAlternateAction: () => Navigator.pushNamed(context, '/login'),
+      logo: Image.asset(
+        'assets/safenest.png',
+        height: 80,
+        width: 80,
+        fit: BoxFit.contain,
+      ),
       children: [
         Form(
           key: _formKey,
@@ -107,7 +111,7 @@ Future<void> _handleSignUp() async {
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: _inputDecoration('Full Name'),
+                decoration: _inputDecoration('Full Name', Icons.person_outline),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your name';
@@ -115,10 +119,10 @@ Future<void> _handleSignUp() async {
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               TextFormField(
                 controller: _emailController,
-                decoration: _inputDecoration('Email'),
+                decoration: _inputDecoration('Email', Icons.email_outlined),
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -130,11 +134,23 @@ Future<void> _handleSignUp() async {
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               TextFormField(
                 controller: _passwordController,
-                obscureText: true,
-                decoration: _inputDecoration('Password'),
+                obscureText: _obscurePassword, // Use the state variable here
+                decoration: _inputDecoration('Password', Icons.lock_outline).copyWith(
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: const Color(0xFF5271FF),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
+                ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your password';
@@ -145,14 +161,23 @@ Future<void> _handleSignUp() async {
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               DropdownButtonFormField<String>(
                 value: _selectedRole,
-                decoration: _inputDecoration('Role'),
+                decoration: _inputDecoration('Role', Icons.people_outline),
+                icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF5271FF)),
+                dropdownColor: Colors.white,
+                borderRadius: BorderRadius.circular(12),
                 items: ['Parent', 'Teacher']
                     .map((role) => DropdownMenuItem(
                           value: role,
-                          child: Text(role),
+                          child: Text(
+                            role,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.black87,
+                            ),
+                          ),
                         ))
                     .toList(),
                 onChanged: (value) =>
@@ -171,16 +196,21 @@ Future<void> _handleSignUp() async {
     );
   }
 
-  InputDecoration _inputDecoration(String label) {
+  InputDecoration _inputDecoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,
+      prefixIcon: Icon(icon, color: const Color(0xFF5271FF)),
       filled: true,
-      fillColor: const Color(0xFFF0F0F0),
+      fillColor: const Color(0xFFF8F9FA),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(vertical: 16),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF5271FF), width: 1.5),
+      ),
     );
   }
 }

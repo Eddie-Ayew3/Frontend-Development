@@ -10,6 +10,7 @@ class AuthForm extends StatelessWidget {
   final VoidCallback onAction;
   final String? alternateActionText;
   final VoidCallback? onAlternateAction;
+  final Widget? logo;
 
   const AuthForm({
     required this.children,
@@ -21,6 +22,7 @@ class AuthForm extends StatelessWidget {
     this.errorMessage,
     this.alternateActionText,
     this.onAlternateAction,
+    this.logo,
     super.key,
   });
 
@@ -33,12 +35,16 @@ class AuthForm extends StatelessWidget {
           SafeArea(
             child: Column(
               children: [
-                const SizedBox(height: 60),
+                const SizedBox(height: 40),
+                if (logo != null) ...[
+                  logo!,
+                  const SizedBox(height: 20),
+                ],
                 Center(
                   child: Text(
                     title,
                     style: const TextStyle(
-                      fontSize: 40,
+                      fontSize: 28,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
@@ -48,74 +54,111 @@ class AuthForm extends StatelessWidget {
                 Center(
                   child: Text(
                     subtitle,
-                    style: const TextStyle(fontSize: 18, color: Colors.white70),
+                    style: const TextStyle(
+                      fontSize: 16, 
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
                 Expanded(
                   child: Container(
                     width: double.infinity,
                     margin: const EdgeInsets.only(top: 32),
-                    padding: const EdgeInsets.all(20),
-                    decoration: const BoxDecoration(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                    decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.only(
+                      borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(40),
                         topRight: Radius.circular(40),
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          spreadRadius: 5,
+                        ),
+                      ],
                     ),
                     child: SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const SizedBox(height: 32),
                           if (errorMessage != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
                               child: Text(
                                 errorMessage!,
-                                style: const TextStyle(color: Colors.red, fontSize: 16),
+                                style: TextStyle(
+                                  color: Colors.red.shade800, 
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                             ),
                           ...children,
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 24),
                           ElevatedButton(
                             onPressed: isLoading ? null : onAction,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF5271FF),
+                              foregroundColor: Colors.white,
+                              elevation: 3,
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16)),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
                             child: isLoading
                                 ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
+                                    height: 24,
+                                    width: 24,
                                     child: CircularProgressIndicator(
-                                        color: Colors.white, strokeWidth: 2),
+                                      color: Colors.white, 
+                                      strokeWidth: 3,
+                                    ),
                                   )
                                 : Text(
                                     actionText,
                                     style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                           ),
                           if (alternateActionText != null &&
                               onAlternateAction != null) ...[
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
+                                Text(
+                                  '${alternateActionText!.split('?')[0]}?',
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 14,
+                                  ),
+                                ),
                                 TextButton(
-                                  onPressed: isLoading
-                                      ? null
-                                      : onAlternateAction,
-                                  child: Text(alternateActionText!,
-                                      style: const TextStyle(
-                                          color: Color(0xFF5271FF))),
+                                  onPressed: isLoading ? null : onAlternateAction,
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  ),
+                                  child: Text(
+                                    alternateActionText!.split('?')[1].trim(),
+                                    style: const TextStyle(
+                                      color: Color(0xFF5271FF),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -130,10 +173,16 @@ class AuthForm extends StatelessWidget {
           ),
           if (isLoading)
             const ModalBarrier(
-                dismissible: false, color: Colors.black54),
+              dismissible: false, 
+              color: Colors.black54,
+            ),
           if (isLoading)
             const Center(
-                child: CircularProgressIndicator(color: Colors.white)),
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 4,
+              ),
+            ),
         ],
       ),
     );
