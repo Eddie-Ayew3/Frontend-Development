@@ -7,8 +7,8 @@ import 'package:safenest/data_entries/add_teacher.dart';
 import 'package:safenest/data_entries/update_parent.dart';
 import 'package:safenest/data_entries/update_teacher.dart';
 import 'package:safenest/user_management/admin_dashboard.dart';
+import 'package:safenest/user_management/parent_dashboard.dart';
 import 'package:safenest/user_management/teacher_dashboard.dart';
-import 'package:safenest/accounts/auth_form.dart';
 
 void main() {
   runApp(const MyApp());
@@ -47,6 +47,17 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>? ?? {};
             return MaterialPageRoute(
               builder: (_) => AdminDashboard(
+                email: args['email'] ?? '',
+                fullname: args['fullname'] ?? '',
+                token: args['token'] ?? '',
+              ),
+            );
+          case '/parent_dashboard':
+            final args = settings.arguments as Map<String, dynamic>? ?? {};
+            return MaterialPageRoute(
+              builder: (_) => ParentDashboard(
+                userId: args['userId'] ?? '',
+                roleId: args['roleId'] ?? '',
                 email: args['email'] ?? '',
                 fullname: args['fullname'] ?? '',
                 token: args['token'] ?? '',
@@ -106,10 +117,6 @@ class MyApp extends StatelessWidget {
               ),
             );
         }
-      },
-      routes: {
-        '/login': (context) => const LoginScreen(),
-        '/register': (context) => const SignUpScreen(),
       },
     );
   }

@@ -271,34 +271,6 @@ class ApiService {
     );
   }
 
- /* static Future<List<Map<String, dynamic>>> getParentChildren({
-    required String token,
-  }) async {
-    return await safeApiCall(() async {
-      final url = Uri.parse('$_baseUrl/parents/children');
-      final response = await http.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      final List<dynamic> data = jsonDecode(response.body);
-
-      if (response.statusCode == 200) {
-        return data.map((child) => {
-              'childID': child['childID'],
-              'fullname': child['fullname'],
-              'grade': child['grade'],
-            }).toList();
-      }
-
-      throw ApiException(
-  
-      );
-    });
-  }*/
 
   static Future<Map<String, dynamic>> createParent({
     required String token,
@@ -378,29 +350,102 @@ class ApiService {
     });
   }
 
-  static Future<void> logout() async {
-    await safeApiCall(() async {
-      final token = await getAuthToken();
-      await clearUserData();
-      if (token == null) return;
-
-      final url = Uri.parse('$_baseUrl/auth/logout');
-      final response = await http.post(
+  static Future<List<Map<String, dynamic>>> getParentChildren({
+    required String token,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/parents/children');
+      final response = await http.get(
         url,
         headers: {
-          'accept': '*/*',
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-      ).timeout(const Duration(seconds: 5));
+      );
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is! List) {
+          throw ApiException('Invalid response format: Expected a list of children');
+        }
+        return data.map((child) {
+          if (child is! Map) {
+            throw ApiException('Invalid child data format');
+          }
+          return {
+            'childID': child['childID']?.toString() ?? '',
+            'fullname': child['fullname']?.toString() ?? 'Unknown',
+            'grade': child['grade']?.toString() ?? 'N/A',
+          };
+        }).toList();
       }
 
-      try {
+      final errorData = jsonDecode(response.body);
+      throw ApiException(
+        errorData['message'] ?? 'Failed to fetch children',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<String> generateChildQRCode({
+    required String childId,
+    required String token,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/parents/generate-qrcode');
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'childId': childId,
+          // Removed timestamp as it's not specified in the sequence diagram
+        }),
+      );
+
+      if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        throw ApiException(
+        if (data['qrCode'] == null) {
+          throw ApiException('QR code not found in response');
+        }
+        return data['qrCode'].toString();
+      }
+
+      final errorData = jsonDecode(response.body);
+      throw ApiException(
+        errorData['message'] ?? 'Failed to generate QR code',
+        response.statusCode,
+      );
+    });
+  }
+
+   
+    static Future<void> logout() async {
+      await safeApiCall(() async {
+        final token = await getAuthToken();
+        await clearUserData();
+        if (token == null) return;
+
+        final url = Uri.parse('$_baseUrl/auth/logout');
+        final response = await http.post(
+          url,
+          headers: {
+            'accept': '*/*',
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+        ).timeout(const Duration(seconds: 5));
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return;
+        }
+
+        try {
+          final data = jsonDecode(response.body);
+          throw ApiException(
           data['message'] ?? 'Logout failed',
           response.statusCode,
         );

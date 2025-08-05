@@ -71,20 +71,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title:Container(
+        title: Container(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 18),
           decoration: BoxDecoration(
             color: Colors.blue[50],
             borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text('ADMINISTRATOR',
+          ),
+          child: const Text(
+            'ADMINISTRATOR',
             style: TextStyle(
               color: Colors.blue,
               fontWeight: FontWeight.bold,
               fontSize: 12,
-                  ),
-                ),
-              ),
+            ),
+          ),
+        ),
         centerTitle: true,
         actions: [
           IconButton(
@@ -99,68 +100,61 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
       body: RefreshIndicator(
         onRefresh: _refreshDashboard,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(15),
-          child: Column(
-            children: [
-              const SizedBox(height:3),
-              Text(
-                'Hello ${widget.fullname}',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+        child: FutureBuilder<DashboardStats>(
+          future: _dashboardStats,
+          builder: (context, snapshot) {
+            return ListView(
+              padding: const EdgeInsets.all(15),
+              children: [
+                const SizedBox(height: 3),
+                Text(
+                  'Hello ${widget.fullname}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildActionButton(
-                    context,
-                    icon: Icons.family_restroom,
-                    label: 'Add Parent',
-                    onPressed: () => Navigator.pushNamed(context, '/new_parent', arguments: widget.token),
-                  ),
-                  _buildActionButton(
-                    context,
-                    icon: Icons.school,
-                    label: 'Add Teacher',
-                    onPressed: () => Navigator.pushNamed(context, '/new_teacher', arguments: widget.token),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 25),
-              FutureBuilder<DashboardStats>(
-                future: _dashboardStats,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  } else if (snapshot.hasError) {
-                    final error = snapshot.error is ApiException
-                        ? (snapshot.error as ApiException).message
-                        : snapshot.error.toString();
-                    return Column(
-                      children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 50),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Error: $error',
-                          style: Theme.of(context).textTheme.titleMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 10),
-                        ElevatedButton(
-                          onPressed: _refreshDashboard,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    );
-                  } else if (!snapshot.hasData) {
-                    return const Text('No data available');
-                  }
-
-                  final stats = snapshot.data!;
-                  return GridView.count(
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildActionButton(
+                      context,
+                      icon: Icons.family_restroom,
+                      label: 'Add Parent',
+                      onPressed: () => Navigator.pushNamed(context, '/new_parent', arguments: widget.token),
+                    ),
+                    _buildActionButton(
+                      context,
+                      icon: Icons.school,
+                      label: 'Add Teacher',
+                      onPressed: () => Navigator.pushNamed(context, '/new_teacher', arguments: widget.token),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 25),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const Center(child: CircularProgressIndicator())
+                else if (snapshot.hasError)
+                  Column(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red, size: 50),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Error: ${snapshot.error}',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton(
+                        onPressed: _refreshDashboard,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  )
+                else if (!snapshot.hasData)
+                  const Text('No data available')
+                else
+                  GridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     crossAxisCount: 2,
@@ -170,34 +164,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     children: [
                       _buildStatCard(
                         icon: Icons.family_restroom,
-                        value: stats.totalParents.toString(),
+                        value: snapshot.data!.totalParents.toString(),
                         label: 'Parents',
                         color: Colors.blue,
                       ),
                       _buildStatCard(
                         icon: Icons.child_care,
-                        value: stats.totalChildren.toString(),
+                        value: snapshot.data!.totalChildren.toString(),
                         label: 'Children',
                         color: Colors.green,
                       ),
                       _buildStatCard(
                         icon: Icons.school,
-                        value: stats.totalTeachers.toString(),
+                        value: snapshot.data!.totalTeachers.toString(),
                         label: 'Teachers',
                         color: Colors.orange,
                       ),
                       _buildStatCard(
                         icon: Icons.event_available,
-                        value: stats.totalPickups.toString(),
+                        value: snapshot.data!.totalPickups.toString(),
                         label: 'Total Pickups',
                         color: Colors.purple,
                       ),
                     ],
-                  );
-                },
-              ),
-            ],
-          ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -211,7 +204,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }) {
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical:10, horizontal: 15),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),

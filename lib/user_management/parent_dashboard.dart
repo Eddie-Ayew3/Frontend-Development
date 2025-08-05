@@ -1,7 +1,11 @@
-/*import 'dart:convert';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
-import 'package:safenest/api/New_Api.dart';
+import 'package:safenest/api/New_api.dart';
+import 'package:safenest/data_entries/add_child.dart';
+import 'package:safenest/data_entries/update_parent.dart';
 
 class ParentDashboard extends StatefulWidget {
   final String userId;
@@ -23,456 +27,503 @@ class ParentDashboard extends StatefulWidget {
   State<ParentDashboard> createState() => _ParentDashboardState();
 }
 
-class _ParentDashboardState extends State<ParentDashboard> {
+class _ParentDashboardState extends State<ParentDashboard>
+    with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _children = [];
   bool _isLoading = false;
-  String? _errorMessage;
-  Map<String, dynamic>? _parentData;
   String? _generatedQRCode;
+  DateTime? _qrExpiry;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
 
-  // Colors
   static const _primaryColor = Color(0xFF5271FF);
+  static const _accentColor = Color(0xFF00C9FF);
   static const _whiteColor = Colors.white;
-  static const _greyColor = Colors.grey;
+  static const _darkColor = Color(0xFF1A1A2E);
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    _loadChildren();
 
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _animationController.forward();
     });
-    
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadChildren() async {
+    setState(() => _isLoading = true);
     try {
-      final results = await Future.wait([
-        ApiService.safeApiCall(() => ApiService.getParentProfile(userId: widget.userId)),
-        ApiService.safeApiCall(() => ApiService.g
-      ]);
-
-      if (mounted) {
-        setState(() {
-          _parentData = results[0] as Map<String, dynamic>;
-          _children = (results[1] as List).map((child) => {
-            'id': child['ChildID'].toString(),
-            'fullName': child['Fullname'] as String? ?? 'Unknown',
-            'grade': child['Grade'] as String? ?? 'No Grade',
-          }).toList().cast<Map<String, dynamic>>();
-          _isLoading = false;
-        });
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = _mapErrorToMessage(e);
-          _isLoading = false;
-        });
-        _showErrorSnackbar('Failed to load data: $_errorMessage', _loadData);
-      }
+      final children = await ApiService.getParentChildren(token: widget.token);
+      setState(() {
+        _children = children;
+        _isLoading = false;
+      });
+    } on ApiException catch (_) {
+      setState(() => _isLoading = false);
     }
   }
 
-  String _mapErrorToMessage(ApiException e) {
-    switch (e.statusCode) {
-      case 401: return 'Session expired. Please log in again';
-      case 403: return 'You don\'t have permission';
-      case 404: return 'Resource not found';
-      case 429: return 'Too many requests, please try again later';
-      default: return e.message;
+  Future<void> _generateQRCode(String childId, String childName) async {
+    try {
+      setState(() => _isLoading = true);
+      final qrCode = await ApiService.generateChildQRCode(
+        childId: childId,
+        token: widget.token,
+      );
+
+      setState(() {
+        _generatedQRCode = qrCode;
+        _qrExpiry = DateTime.now().add(const Duration(minutes: 15));
+        _isLoading = false;
+      });
+
+      _showQRDialog(childName);
+    } on ApiException catch (_) {
+      setState(() => _isLoading = false);
     }
   }
 
-  void _showErrorSnackbar(String message, VoidCallback? retryAction) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        action: retryAction != null 
-          ? SnackBarAction(label: 'Retry', onPressed: retryAction)
-          : null,
+  void _showQRDialog(String childName) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: _whiteColor,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Pickup Pass',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: _darkColor,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_primaryColor, _accentColor],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      _generatedQRCode != null
+                          ? Image.memory(
+                              base64Decode(_generatedQRCode!.split(',').last),
+                              height: 180,
+                              width: 180,
+                            )
+                          : const CircularProgressIndicator(color: _whiteColor),
+                      const SizedBox(height: 16),
+                      Text(
+                        childName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: _whiteColor,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _qrExpiry != null
+                            ? 'Valid until: ${DateFormat('MMM d, yyyy - hh:mm a').format(_qrExpiry!)}'
+                            : 'Valid until: Unknown',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: _whiteColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _whiteColor,
+                      foregroundColor: _primaryColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'Close',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Future<void> _handleRefresh() async => _loadData();
-
   Future<void> _logout() async {
-    setState(() => _isLoading = true);
     try {
       await ApiService.logout();
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(
           context,
           '/login',
-          (Route<dynamic> route) => false,
+          (route) => false,
         );
       }
     } on ApiException catch (e) {
       if (mounted) {
-        setState(() {
-          _errorMessage = _mapErrorToMessage(e);
-          _isLoading = false;
-        });
-        _showErrorSnackbar('Logout failed: $_errorMessage', null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logout failed: ${e.message}'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
       }
     }
-  }
-
-  void _navigateToProfile() {
-    Navigator.pushNamed(context, '/parent_profile', arguments: widget.userId);
   }
 
   void _navigateToAddChild() {
-    Navigator.pushNamed(
+    Navigator.push(
       context,
-      '/new_child',
-      arguments: {
-        'parentId': widget.roleId,
-        'token': widget.token,
-      },
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            AddChildScreen(
+          parentId: widget.roleId,
+          token: widget.token,
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(0.0, 1.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween =
+              Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          return SlideTransition(
+            position: animation.drive(tween),
+            child: child,
+          );
+        },
+      ),
     );
   }
 
-  Future<void> _generateQRCode(String childId, String childName) async {
-    try {
-      setState(() => _isLoading = true);
-      final token = await ApiService.getAuthToken();
-      if (token == null) throw ApiException('No authentication token found', statusCode: 401);
-
-      final qrCode = await ApiService.safeApiCall(() => ApiService.generateQRCode(childId, token));
-      if (mounted) {
-        setState(() {
-          _generatedQRCode = qrCode;
-          _isLoading = false;
-        });
-        _showQRCodeDialog(childName);
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = _mapErrorToMessage(e);
-          _isLoading = false;
-        });
-        _showErrorSnackbar('Failed to generate QR code: $_errorMessage', null);
-      }
-    }
+  void _navigateToUpdateParent() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UpdateParentScreen(
+          userId: widget.userId,
+          token: widget.token,
+        ),
+      ),
+    );
   }
 
-  Future<void> _viewPickupStatus(String childId, String childName) async {
-    await Navigator.pushNamed(context, '/pickup_status', arguments: {
-      'childId': childId,
-      'childName': childName,
-    });
-  }
-
-  void _showQRCodeDialog(String childName) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Pickup Pass for $childName',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: _primaryColor,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _primaryColor, width: 2),
-                ),
-                child: Column(
-                  children: [
-                    if (_generatedQRCode != null)
-                      Image.memory(
-                        base64Decode(_generatedQRCode!.split(',').last),
-                        height: 200,
-                        width: 200,
-                      )
-                    else
-                      const Icon(Icons.qr_code_2, size: 120, color: _primaryColor),
-                    const SizedBox(height: 8),
-                    Text(
-                      childName,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+  Widget _buildChildCard(Map<String, dynamic> child, int index) {
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (context, childWidget) {
+        return Transform.translate(
+          offset: Offset(0, 50 * (1 - _fadeAnimation.value)),
+          child: Opacity(
+            opacity: _fadeAnimation.value,
+            child: childWidget,
+          ),
+        );
+      },
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _generateQRCode(
+            child['childID'].toString(),
+            child['fullname'],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Hero(
+                  tag: 'child-avatar-${child['childID']}',
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [_primaryColor, _accentColor],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      DateFormat('MMM d, yyyy').format(DateTime.now()),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Show this digital pass at the school gate',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryColor,
-                    shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    'Close',
-                    style: TextStyle(color: _whiteColor),
+                    child: Center(
+                      child: Text(
+                        child['fullname'][0],
+                        style: const TextStyle(
+                          color: _whiteColor,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        child['fullname'],
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        child['grade'],
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.qr_code_scanner, color: _primaryColor),
+                  onPressed: () => _generateQRCode(
+                    child['childID'].toString(),
+                    child['fullname'],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildChildCard(Map<String, dynamic> child) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.grey[200]!, width: 1),
-        ),
-        leading: CircleAvatar(
-          backgroundColor: _primaryColor.withOpacity(0.1),
-          child: Text(
-            child['fullName']?[0] ?? '?',
-            style: const TextStyle(
-              color: _primaryColor,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        title: Text(
-          child['fullName'] ?? 'Unknown',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(child['grade'] ?? 'No grade'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.qr_code_2, color: _primaryColor),
-              onPressed: _isLoading
-                  ? null
-                  : () => _generateQRCode(child['id'].toString(), child['fullName'] ?? 'Child'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.info, color: _primaryColor),
-              onPressed: _isLoading
-                  ? null
-                  : () => _viewPickupStatus(child['id'].toString(), child['fullName'] ?? 'Child'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChildrenList() {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (_children.isEmpty) {
-      return Column(
-        children: [
-          const Center(
-            child: Text('No children found', style: TextStyle(color: _greyColor)),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _navigateToAddChild,
-            child: const Text('Add Child'),
-          ),
-        ],
-      );
-    }
-    return Column(
-      children: [
-        ..._children.map(_buildChildCard).toList(),
-        ElevatedButton(
-          onPressed: _navigateToAddChild,
-          child: const Text('Add Another Child'),
-        ),
-      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final formattedDate = DateFormat.yMMMMd().add_jm().format(DateTime.now());
-
     return Scaffold(
-      backgroundColor: _primaryColor,
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Text('Parent Dashboard - ${widget.roleId}'),
-        centerTitle: true,
-        backgroundColor: _primaryColor,
-        foregroundColor: _whiteColor,
-        elevation: 0,
-        actions: [
-          IconButton(
-            onPressed: _navigateToProfile,
-            icon: const CircleAvatar(
-              radius: 16,
-              backgroundColor: _whiteColor,
-              child: Icon(Icons.person, size: 18, color: _primaryColor),
+        title: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+          decoration: BoxDecoration(
+            color: _primaryColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Text(
+            'PARENT DASHBOARD',
+            style: TextStyle(
+              color: _primaryColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+              letterSpacing: 1.2,
             ),
           ),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: _darkColor,
+        actions: [
           IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: _navigateToUpdateParent,
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
             onPressed: _logout,
-            icon: const Icon(Icons.logout, color: _whiteColor),
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          RefreshIndicator(
-            onRefresh: _handleRefresh,
-            child: SingleChildScrollView(
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToAddChild,
+        backgroundColor: _primaryColor,
+        foregroundColor: _whiteColor,
+        elevation: 4,
+        child: const Icon(Icons.add, size: 28),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _loadChildren,
+        child: Stack(
+          children: [
+            CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
-                children: [
-                  if (_errorMessage != null)
-                    _buildErrorBanner(_errorMessage!),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: const BoxDecoration(
-                      color: _whiteColor,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(40),
-                        topRight: Radius.circular(40),
-                      ),
-                    ),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text(
-                          '📅 $formattedDate',
-                          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Hello, ${widget.fullname}!',
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: _primaryColor.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Hello, ${widget.fullname}!',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: _darkColor,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                widget.email,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Email: ${widget.email}',
-                          style: const TextStyle(fontSize: 16),
+                        const SizedBox(height: 15),
+                        Row(
+                          children: [
+                            const Text(
+                              'My Children',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: _darkColor,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${_children.length} Registered',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            )
+                          ],
                         ),
-                        const SizedBox(height: 24),
-                        _buildMainContentCard(),
-                        const SizedBox(height: 24),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          if (_isLoading) ...[
-            const ModalBarrier(dismissible: false, color: Colors.black54),
-            const Center(child: CircularProgressIndicator(color: _whiteColor)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorBanner(String message) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Material(
-        color: Colors.red[50],
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 22),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(
-                    color: Colors.red,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
                 ),
+                if (_isLoading && _children.isEmpty)
+                  const SliverFillRemaining(
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: _primaryColor,
+                      ),
+                    ),
+                  )
+                else if (_children.isEmpty)
+                  SliverFillRemaining(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.child_care,
+                            size: 60,
+                            color: Colors.grey[300],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No children registered',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: _navigateToAddChild,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _primaryColor,
+                              foregroundColor: _whiteColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 32,
+                                vertical: 16,
+                              ),
+                            ),
+                            child: const Text('Add Your First Child'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) =>
+                          _buildChildCard(_children[index], index),
+                      childCount: _children.length,
+                    ),
+                  ),
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              ],
+            ),
+            if (_isLoading && _children.isNotEmpty)
+              const Center(
+                child: CircularProgressIndicator(color: _primaryColor),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
-
-  Widget _buildMainContentCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Generate Digital Pickup Pass',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: _primaryColor,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Select a child to generate their one-time pickup QR code',
-            style: TextStyle(
-              fontSize: 14,
-              color: _greyColor,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildChildrenList(),
-        ],
-      ),
-    );
-  }
-}*/
+}
