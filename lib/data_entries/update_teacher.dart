@@ -13,7 +13,9 @@ class UpdateTeacherScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Update Teacher')),
+      appBar: AppBar(
+        title: const Text('Update Teacher Profile'),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -21,15 +23,28 @@ class UpdateTeacherScreen extends StatelessWidget {
             Text('Updating Teacher ID: $userId'),
             const SizedBox(height: 20),
             const TextField(
-              decoration: InputDecoration(labelText: 'New Subject'),
+              decoration: InputDecoration(
+                labelText: 'New Subject',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 20),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5271FF),
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
               onPressed: () {
                 // TODO: Implement update teacher functionality
                 print('Token: $token');
               },
-              child: const Text('Update Teacher'),
+              child: const Text(
+                'Update Teacher',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),

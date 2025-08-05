@@ -70,7 +70,7 @@ class MyApp extends StatelessWidget {
                 roleId: args['roleId'] ?? '',
                 email: args['email'] ?? '',
                 fullname: args['fullname'] ?? '',
-                token: args['token'] ?? '',
+                token: args['token'] ?? '', userId: '',
               ),
             );
           case '/new_child':

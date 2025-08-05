@@ -271,7 +271,6 @@ class ApiService {
     );
   }
 
-
   static Future<Map<String, dynamic>> createParent({
     required String token,
     required String fullname,
@@ -402,7 +401,6 @@ class ApiService {
         },
         body: jsonEncode({
           'childId': childId,
-          // Removed timestamp as it's not specified in the sequence diagram
         }),
       );
 
@@ -422,30 +420,62 @@ class ApiService {
     });
   }
 
-   
-    static Future<void> logout() async {
-      await safeApiCall(() async {
-        final token = await getAuthToken();
-        await clearUserData();
-        if (token == null) return;
+  static Future<Map<String, dynamic>> updateParent({
+    required String token,
+    required String userId,
+    required String phone,
+    required String location,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/parents/$userId');
+      final response = await http.put(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'phone': phone,
+          'location': location,
+        }),
+      );
 
-        final url = Uri.parse('$_baseUrl/auth/logout');
-        final response = await http.post(
-          url,
-          headers: {
-            'accept': '*/*',
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-        ).timeout(const Duration(seconds: 5));
+      final data = jsonDecode(response.body);
 
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return;
-        }
+      if (response.statusCode == 200) {
+        return data;
+      }
 
-        try {
-          final data = jsonDecode(response.body);
-          throw ApiException(
+      throw ApiException(
+        data['message'] ?? 'Failed to update parent',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<void> logout() async {
+    await safeApiCall(() async {
+      final token = await getAuthToken();
+      await clearUserData();
+      if (token == null) return;
+
+      final url = Uri.parse('$_baseUrl/auth/logout');
+      final response = await http.post(
+        url,
+        headers: {
+          'accept': '*/*',
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return;
+      }
+
+      try {
+        final data = jsonDecode(response.body);
+        throw ApiException(
           data['message'] ?? 'Logout failed',
           response.statusCode,
         );
