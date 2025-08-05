@@ -7,7 +7,6 @@ import 'package:safenest/data_entries/add_teacher.dart';
 import 'package:safenest/data_entries/update_parent.dart';
 import 'package:safenest/data_entries/update_teacher.dart';
 import 'package:safenest/user_management/admin_dashboard.dart';
-import 'package:safenest/user_management/parent_dashboard.dart';
 import 'package:safenest/user_management/teacher_dashboard.dart';
 import 'package:safenest/accounts/auth_form.dart';
 
@@ -44,28 +43,15 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(builder: (_) => const LoginScreen());
           case '/register':
             return MaterialPageRoute(builder: (_) => const SignUpScreen());
-            
-          // Dashboard routes with full user data
           case '/admin_dashboard':
             final args = settings.arguments as Map<String, dynamic>? ?? {};
             return MaterialPageRoute(
               builder: (_) => AdminDashboard(
                 email: args['email'] ?? '',
                 fullname: args['fullname'] ?? '',
-              ),
-            );
-            
-          case '/parent_dashboard':
-            final args = settings.arguments as Map<String, dynamic>? ?? {};
-            return MaterialPageRoute(
-              builder: (_) => ParentDashboard(
-                roleId: args['roleId'] ?? '',
-                email: args['email'] ?? '',
-                fullname: args['fullname'] ?? '',
                 token: args['token'] ?? '',
               ),
             );
-            
           case '/teacher_dashboard':
             final args = settings.arguments as Map<String, dynamic>? ?? {};
             return MaterialPageRoute(
@@ -76,8 +62,6 @@ class MyApp extends StatelessWidget {
                 token: args['token'] ?? '',
               ),
             );
-            
-          // Feature routes
           case '/new_child':
             final args = settings.arguments as Map<String, dynamic>? ?? {};
             return MaterialPageRoute(
@@ -86,19 +70,16 @@ class MyApp extends StatelessWidget {
                 token: args['token'] ?? '',
               ),
             );
-            
           case '/new_parent':
             final token = settings.arguments as String? ?? '';
             return MaterialPageRoute(
               builder: (_) => AddParentScreen(token: token),
             );
-            
           case '/new_teacher':
             final token = settings.arguments as String? ?? '';
             return MaterialPageRoute(
               builder: (_) => AddTeacherScreen(token: token),
             );
-            
           case '/update_parent':
             final args = settings.arguments as Map<String, dynamic>? ?? {};
             return MaterialPageRoute(
@@ -107,7 +88,6 @@ class MyApp extends StatelessWidget {
                 token: args['token'] ?? '',
               ),
             );
-            
           case '/update_teacher':
             final args = settings.arguments as Map<String, dynamic>? ?? {};
             return MaterialPageRoute(
@@ -116,19 +96,17 @@ class MyApp extends StatelessWidget {
                 token: args['token'] ?? '',
               ),
             );
-            
           default:
             return MaterialPageRoute(
               builder: (_) => Scaffold(
                 body: Center(
                   child: Text('Route ${settings.name} not found',
-                    style: const TextStyle(fontSize: 18)),
+                      style: const TextStyle(fontSize: 18)),
                 ),
               ),
             );
         }
       },
-      // Optional: Add named routes for better clarity
       routes: {
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const SignUpScreen(),

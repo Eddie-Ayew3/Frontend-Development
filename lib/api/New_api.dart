@@ -6,22 +6,21 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class ApiException implements Exception {
   final String message;
   final int? statusCode;
-  
+
   ApiException(this.message, [this.statusCode]);
 
   @override
-  String toString() => statusCode != null 
-      ? 'ApiException: $message (Status $statusCode)' 
+  String toString() => statusCode != null
+      ? 'ApiException: $message (Status $statusCode)'
       : 'ApiException: $message';
 }
 
 class ApiService {
-  static const String _baseUrl = 'https://ee514dc30027.ngrok-free.app/v1';
-  static const Duration _timeoutDuration = Duration(seconds: 30);
+  static const String _baseUrl = 'https://8663cfbfd5b4.ngrok-free.app/v1';
+  static const Duration _timeoutDuration = Duration(seconds: 60);
   static const Duration _tokenExpirationThreshold = Duration(minutes: 5);
   static const _storage = FlutterSecureStorage();
 
-  // Keys for secure storage
   static const _tokenKey = 'auth_token';
   static const _emailKey = 'user_email';
   static const _fullnameKey = 'user_fullname';
@@ -43,7 +42,6 @@ class ApiService {
     }
   }
 
-  // User data management
   static Future<void> setUserData({
     required String token,
     required String email,
@@ -141,14 +139,13 @@ class ApiService {
     );
 
     final data = jsonDecode(response.body);
-    
+
     if (response.statusCode == 200) {
       final newToken = data['token'];
-      final newExpiration = data['expiration'] ?? 
+      final newExpiration = data['expiration'] ??
           DateTime.now().toUtc().add(const Duration(days: 1)).toIso8601String();
-      
+
       if (newToken != null) {
-        // Update only token and expiration
         await Future.wait([
           _storage.write(key: _tokenKey, value: newToken),
           _storage.write(key: _expirationKey, value: newExpiration),
@@ -163,8 +160,33 @@ class ApiService {
     );
   }
 
+  static Future<Map<String, dynamic>> getAdminDashboard(String token) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/admin/Data');
+      final response = await http.get(
+        url,
+        headers: {
+          'accept': '*/*',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return data;
+      }
+
+      throw ApiException(
+        data['message'] ?? 'Failed to fetch dashboard data',
+        response.statusCode,
+      );
+    });
+  }
+
   static Future<Map<String, dynamic>> login({
-    required String email, 
+    required String email,
     required String password,
   }) async {
     final url = Uri.parse('$_baseUrl/auth/login');
@@ -175,13 +197,13 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
-        'email': email, 
+        'email': email,
         'password': password,
       }),
     ).timeout(_timeoutDuration);
 
     final data = jsonDecode(response.body);
-    
+
     if (response.statusCode == 200) {
       await setUserData(
         token: data['token'],
@@ -221,12 +243,26 @@ class ApiService {
     ).timeout(_timeoutDuration);
 
     final data = jsonDecode(response.body);
-    
+
     if (response.statusCode == 200) {
+      await setUserData(
+        token: data['token'] ?? '',
+        email: data['email'] ?? email,
+        fullname: data['fullname'] ?? fullname,
+        role: data['role'] ?? role,
+        roleId: data['id'].toString(),
+        expiration: data['expiration'] ??
+            DateTime.now().toUtc().add(const Duration(days: 1)).toIso8601String(),
+      );
       return {
         'message': data['message'],
         'id': data['id'].toString(),
         'role': role,
+        'token': data['token'] ?? '',
+        'email': data['email'] ?? email,
+        'fullname': data['fullname'] ?? fullname,
+        'expiration': data['expiration'] ??
+            DateTime.now().toUtc().add(const Duration(days: 1)).toIso8601String(),
       };
     }
     throw ApiException(
@@ -235,16 +271,117 @@ class ApiService {
     );
   }
 
-  // Logout a user
+ /* static Future<List<Map<String, dynamic>>> getParentChildren({
+    required String token,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/parents/children');
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      final List<dynamic> data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return data.map((child) => {
+              'childID': child['childID'],
+              'fullname': child['fullname'],
+              'grade': child['grade'],
+            }).toList();
+      }
+
+      throw ApiException(
+  
+      );
+    });
+  }*/
+
+  static Future<Map<String, dynamic>> createParent({
+    required String token,
+    required String fullname,
+    required String email,
+    required String phone,
+    required String location,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/parents');
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'fullname': fullname,
+          'email': email,
+          'phone': phone,
+          'location': location,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 201) {
+        return {
+          'message': data['message'] ?? 'Parent created successfully',
+          'id': data['id'],
+        };
+      }
+
+      throw ApiException(
+        data['message'] ?? 'Failed to create parent',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> createTeacher({
+    required String token,
+    required String fullname,
+    required String phone,
+    required String email,
+    required String grade,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/teachers');
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'fullname': fullname,
+          'phone': phone,
+          'email': email,
+          'grade': grade,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 201) {
+        return {
+          'message': data['message'] ?? 'Teacher created successfully',
+          'id': data['id'],
+        };
+      }
+
+      throw ApiException(
+        data['message'] ?? 'Failed to create teacher',
+        response.statusCode,
+      );
+    });
+  }
+
   static Future<void> logout() async {
     await safeApiCall(() async {
-      // Get current token before clearing data
       final token = await getAuthToken();
-      
-      // Clear local user data immediately (whether server logout succeeds or not)
       await clearUserData();
-
-      // If no token exists, consider logout successful (idempotent operation)
       if (token == null) return;
 
       final url = Uri.parse('$_baseUrl/auth/logout');
@@ -257,12 +394,10 @@ class ApiService {
         },
       ).timeout(const Duration(seconds: 5));
 
-      // Consider any 2xx status code as successful logout
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return;
       }
 
-      // Parse error response if available
       try {
         final data = jsonDecode(response.body);
         throw ApiException(
