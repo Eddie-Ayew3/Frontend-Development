@@ -16,7 +16,7 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static const String _baseUrl = 'https://8663cfbfd5b4.ngrok-free.app/v1';
+  static const String _baseUrl = 'https://73301cfb3bde.ngrok-free.app/v1';
   static const Duration _timeoutDuration = Duration(seconds: 60);
   static const Duration _tokenExpirationThreshold = Duration(minutes: 5);
   static const _storage = FlutterSecureStorage();
@@ -387,38 +387,35 @@ class ApiService {
     });
   }
 
-  static Future<String> generateChildQRCode({
-    required String childId,
-    required String token,
-  }) async {
-    return await safeApiCall(() async {
-      final url = Uri.parse('$_baseUrl/parents/generate-qrcode');
-      final response = await http.post(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'childId': childId,
-        }),
-      );
+static Future<String> generateChildQRCode({
+  required String childId,
+  required String token,
+}) async {
+  return await safeApiCall(() async {
+    final url = Uri.parse('$_baseUrl/qr/generate?childId=$childId'); // Updated endpoint
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['qrCode'] == null) {
-          throw ApiException('QR code not found in response');
-        }
-        return data['qrCode'].toString();
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['qrCode'] == null) {
+        throw ApiException('QR code not found in response');
       }
+      return data['qrCode'].toString();
+    }
 
-      final errorData = jsonDecode(response.body);
-      throw ApiException(
-        errorData['message'] ?? 'Failed to generate QR code',
-        response.statusCode,
-      );
-    });
-  }
+    final errorData = jsonDecode(response.body);
+    throw ApiException(
+      errorData['message'] ?? 'Failed to generate QR code',
+      response.statusCode,
+    );
+  });
+}
 
   static Future<Map<String, dynamic>> updateParent({
     required String token,
@@ -452,6 +449,43 @@ class ApiService {
       );
     });
   }
+  static Future<Map<String, dynamic>> verifyQRCode({
+  required String qrCode,
+  required String token,
+}) async {
+  return await safeApiCall(() async {
+    final url = Uri.parse('$_baseUrl/qr/verify');
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'qrCode': qrCode}),
+    );
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return data;
+    }
+
+    switch (response.statusCode) {
+      case 400:
+        throw ApiException('Invalid QR code');
+      case 401:
+        throw ApiException('Unauthorized');
+      case 403:
+        throw ApiException('Unauthorized for this child\'s grade');
+      case 404:
+        throw ApiException('Child not found');
+      case 409:
+        throw ApiException('Pickup already verified');
+      default:
+        throw ApiException('Failed to verify QR code');
+    }
+  });
+}
 
   static Future<void> logout() async {
     await safeApiCall(() async {

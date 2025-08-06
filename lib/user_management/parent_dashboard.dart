@@ -77,25 +77,31 @@ class _ParentDashboardState extends State<ParentDashboard>
     }
   }
 
-  Future<void> _generateQRCode(String childId, String childName) async {
-    try {
-      setState(() => _isLoading = true);
-      final qrCode = await ApiService.generateChildQRCode(
-        childId: childId,
-        token: widget.token,
-      );
+Future<void> _generateQRCode(String childId, String childName) async {
+  try {
+    setState(() => _isLoading = true);
+    final qrCode = await ApiService.generateChildQRCode(
+      childId: childId,
+      token: widget.token,
+    );
 
-      setState(() {
-        _generatedQRCode = qrCode;
-        _qrExpiry = DateTime.now().add(const Duration(minutes: 15));
-        _isLoading = false;
-      });
+    setState(() {
+      _generatedQRCode = qrCode;
+      _qrExpiry = DateTime.now().add(const Duration(minutes: 15));
+      _isLoading = false;
+    });
 
-      _showQRDialog(childName);
-    } on ApiException catch (_) {
-      setState(() => _isLoading = false);
-    }
+    _showQRDialog(childName);
+  } on ApiException catch (e) {
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Error: ${e.message}'),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
+}
 
   void _showQRDialog(String childName) {
     showDialog(

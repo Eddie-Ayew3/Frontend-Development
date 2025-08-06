@@ -1,219 +1,347 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:safenest/api/New_api.dart';
 
 class QRScannerScreen extends StatefulWidget {
-  const QRScannerScreen({super.key});
+  final String token;
+
+  const QRScannerScreen({super.key, required this.token});
 
   @override
   State<QRScannerScreen> createState() => _QRScannerScreenState();
 }
 
 class _QRScannerScreenState extends State<QRScannerScreen> {
-  final MobileScannerController controller = MobileScannerController();
-  bool isScanning = true;
-  bool isTorchOn = false;
-  bool isVerifying = false;
-  String? _errorMessage;
+  late MobileScannerController cameraController;
+  bool _isProcessing = false;
+  bool _isFlashOn = false;
+  bool _isFrontCamera = false;
+
+  static const _primaryColor = Color(0xFF5271FF);
+  static const _whiteColor = Colors.white;
+  static const _darkColor = Color(0xFF1A1A2E);
+  static const _lightGrey = Color(0xFFF5F5F5);
 
   @override
   void initState() {
     super.initState();
-    requestCameraPermission();
-  }
-
-  Future<void> requestCameraPermission() async {
-    final status = await Permission.camera.status;
-    if (!status.isGranted) {
-      final result = await Permission.camera.request();
-      if (!result.isGranted && mounted) {
-        setState(() => _errorMessage = 'Camera permission denied');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Camera permission denied'),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: requestCameraPermission,
-            ),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _verifyQRCode(String qrCode) async {
-    if (!mounted) return;
-
-    setState(() {
-      isVerifying = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final response = await ApiService.safeApiCall(
-        () => ApiService.verifyQRCode(qrCode),
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Pickup verified for ${response['childName'] ?? 'child'} by ${response['parentName'] ?? 'parent'}',
-            ),
-          ),
-        );
-        Navigator.pop(context, qrCode); // Return qrCode to match TeacherDashboard
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        setState(() => _errorMessage = _mapErrorToMessage(e));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('QR verification failed: $_errorMessage'),
-            action: e.message == 'Network error'
-                ? SnackBarAction(label: 'Retry', onPressed: () => _verifyQRCode(qrCode))
-                : null,
-          ),
-        );
-        setState(() {
-          isScanning = true;
-          isVerifying = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _errorMessage = 'An unexpected error occurred');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('An unexpected error occurred'),
-            action: SnackBarAction(label: 'Retry', onPressed: () => _verifyQRCode(qrCode)),
-          ),
-        );
-        setState(() {
-          isScanning = true;
-          isVerifying = false;
-        });
-      }
-    }
-  }
-
-  String _mapErrorToMessage(ApiException e) {
-    switch (e.message) {
-      case 'Invalid QR code':
-        return 'The scanned QR code is invalid';
-      case 'Network error':
-        return 'Please check your internet connection';
-      case 'Unauthorized':
-        return 'Please log in again';
-      case 'Child not found':
-        return 'Child not found for this QR code';
-      default:
-        return e.message;
-    }
+    cameraController = MobileScannerController(
+      detectionSpeed: DetectionSpeed.normal,
+      facing: CameraFacing.back,
+      torchEnabled: false,
+    );
   }
 
   @override
   void dispose() {
-    controller.dispose();
+    cameraController.dispose();
     super.dispose();
+  }
+
+  Future<void> _verifyQRCode(String qrCode) async {
+    if (_isProcessing || !mounted) return;
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final result = await ApiService.verifyQRCode(
+        qrCode: qrCode,
+        token: widget.token,
+      );
+
+      if (!mounted) return;
+
+      _showVerificationSuccess(
+        result['childName'] ?? 'Unknown',
+        result['grade'] ?? 'N/A',
+        result['verifiedAt'] ?? DateTime.now().toString(),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  void _showVerificationSuccess(String childName, String grade, String verifiedAt) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Pickup Verified',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDetailRow('Child:', childName),
+            const SizedBox(height: 12),
+            _buildDetailRow('Grade:', grade),
+            const SizedBox(height: 12),
+            _buildDetailRow('Time:', _formatDateTime(verifiedAt)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              cameraController.start();
+            },
+            child: const Text(
+              'SCAN NEXT',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: _primaryColor,
+              ),
+            ),
+          ),
+        ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.w500,
+            color: Colors.grey,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDateTime(String dateTime) {
+    try {
+      final dt = DateTime.parse(dateTime);
+      return '${dt.hour}:${dt.minute.toString().padLeft(2, '0')} - ${dt.day}/${dt.month}/${dt.year}';
+    } catch (e) {
+      return dateTime;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF5271FF),
+      backgroundColor: _lightGrey,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('QR Code Scanner'),
+        title: const Text(
+          'Scan QR Code',
+          style: TextStyle(
+            color: _whiteColor,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         centerTitle: true,
-        backgroundColor: const Color(0xFF5271FF),
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pushReplacementNamed(context, '/teacher_dashboard'),
+          icon: const Icon(Icons.arrow_back, color: _whiteColor),
+          onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
-            icon: Icon(isTorchOn ? Icons.flash_on : Icons.flash_off),
+            icon: Icon(
+              _isFlashOn ? Icons.flash_on : Icons.flash_off,
+              color: _whiteColor,
+            ),
             onPressed: () {
-              controller.toggleTorch();
-              setState(() => isTorchOn = !isTorchOn);
+              setState(() => _isFlashOn = !_isFlashOn);
+              cameraController.toggleTorch();
             },
           ),
           IconButton(
-            icon: const Icon(Icons.cameraswitch),
-            onPressed: () => controller.switchCamera(),
+            icon: Icon(
+              _isFrontCamera ? Icons.camera_front : Icons.camera_rear,
+              color: _whiteColor,
+            ),
+            onPressed: () {
+              setState(() => _isFrontCamera = !_isFrontCamera);
+              cameraController.switchCamera();
+            },
           ),
         ],
       ),
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          Column(
-            children: [
-              const SizedBox(height: 20),
-              Center(child: Image.asset('assets/safenest.png', height: 120)),
-              const SizedBox(height: 20),
-              Expanded(
-                child: MobileScanner(
-                  controller: controller,
-                  onDetect: (capture) {
-                    final List<Barcode> barcodes = capture.barcodes;
-                    final Barcode? firstBarcode = barcodes.isNotEmpty ? barcodes.first : null;
-
-                    if (firstBarcode != null && firstBarcode.rawValue != null && isScanning && !isVerifying) {
-                      setState(() => isScanning = false);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('QR code scanned successfully')),
-                        );
-                        _verifyQRCode(firstBarcode.rawValue!);
-                      }
-                    }
-                  },
-                ),
-              ),
-            ],
+          MobileScanner(
+            controller: cameraController,
+            onDetect: (capture) {
+              final barcodes = capture.barcodes;
+              for (final barcode in barcodes) {
+                if (barcode.rawValue != null && !_isProcessing) {
+                  _verifyQRCode(barcode.rawValue!);
+                  break; // Process only one code at a time
+                }
+              }
+            },
           ),
-          if (isVerifying)
-            const ModalBarrier(
-              dismissible: false,
-              color: Colors.black54,
-            ),
-          if (isVerifying)
-            const Center(child: CircularProgressIndicator(color: Colors.white)),
-          if (_errorMessage != null)
-            Align(
-              alignment: Alignment.topCenter,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Material(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 22),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: Colors.red,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                    ),
+          _buildScannerOverlay(context),
+          if (_isProcessing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.transparent,
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(_primaryColor),
                   ),
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildScannerOverlay(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final cutOutSize = size.width * 0.7;
+
+    return Positioned.fill(
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              color: Colors.transparent,
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  color: Colors.transparent,
+                ),
+              ),
+              Container(
+                width: cutOutSize,
+                height: cutOutSize,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _primaryColor.withOpacity(0.5),
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Stack(
+                  children: [
+                    // Corner indicators
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      child: _buildCornerIndicator(true, true),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: _buildCornerIndicator(true, false),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      child: _buildCornerIndicator(false, true),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: _buildCornerIndicator(false, false),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Container(
+                  color: Colors.transparent,
+                ),
+              ),
+            ],
+          ),
+          Expanded(
+            child: Container(
+              color: Colors.transparent,
+              padding: const EdgeInsets.all(24),
+              child: const Column(
+                children: [
+                  Text(
+                    'Align the QR code within the frame',
+                    style: TextStyle(
+                      color: _whiteColor,
+                      fontSize: 16,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Scanning will happen automatically',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCornerIndicator(bool isTop, bool isLeft) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: isLeft ? _primaryColor : Colors.transparent,
+            width: 4,
+          ),
+          top: BorderSide(
+            color: isTop ? _primaryColor : Colors.transparent,
+            width: 4,
+          ),
+          right: BorderSide(
+            color: !isLeft ? _primaryColor : Colors.transparent,
+            width: 4,
+          ),
+          bottom: BorderSide(
+            color: !isTop ? _primaryColor : Colors.transparent,
+            width: 4,
+          ),
+        ),
       ),
     );
   }
