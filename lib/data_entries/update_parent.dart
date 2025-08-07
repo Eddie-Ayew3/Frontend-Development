@@ -2,15 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:safenest/api/New_api.dart';
 
 class UpdateParentScreen extends StatefulWidget {
-  final String userId;
+  final String userId; // Should be roleId (ParentID)
   final String token;
-  final Map<String, dynamic>? currentParentData;
 
   const UpdateParentScreen({
     super.key,
     required this.userId,
     required this.token,
-    this.currentParentData,
   });
 
   @override
@@ -23,16 +21,6 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
   final TextEditingController _locationController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize form with current values if available
-    if (widget.currentParentData != null) {
-      _phoneController.text = widget.currentParentData!['phone'] ?? '';
-      _locationController.text = widget.currentParentData!['location'] ?? '';
-    }
-  }
 
   @override
   void dispose() {
@@ -50,18 +38,13 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
     });
 
     try {
-      // Check token validity first
-      final authStatus = await ApiService.checkAuthStatus();
-      if (authStatus == null) {
-        throw ApiException('Session expired. Please login again.');
-      }
-
-      await ApiService.safeApiCall(() => ApiService.updateParent(
-            token: widget.token,
-            userId: widget.userId,
-            phone: _phoneController.text.trim(),
-            location: _locationController.text.trim(),
-          ));
+      print('Using token for update: ${widget.token}'); // Debug log
+      await ApiService.updateParent(
+        token: widget.token, // Use the original token
+        userId: widget.userId,
+        phone: _phoneController.text.trim(),
+        location: _locationController.text.trim(),
+      );
 
       if (!mounted) return;
       _showSuccessDialog('Parent information updated successfully!');
@@ -112,7 +95,7 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
               onPressed: () {
                 Navigator.pop(context); // Close dialog
                 if (_formKey.currentState!.validate()) {
-                  _submitForm(); // Only retry if form is valid
+                  _submitForm(); // Retry if form is valid
                 }
               },
               child: const Text('Retry'),
@@ -126,6 +109,10 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
         ],
       ),
     );
+
+    if (_errorMessage == 'Session expired. Please login again.') {
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+    }
   }
 
   String _mapErrorToMessage(ApiException e) {
@@ -160,7 +147,7 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
         filled: true,
         fillColor: Colors.grey[50],
         counterText: '',
-        hintText: '0244123456 or +233244123456',
+        hintText: '024*********',
       ),
       validator: (value) {
         if (value == null || value.isEmpty) {
@@ -225,6 +212,25 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
             ),
     );
   }
+  @override
+Future<void> initState() async {
+  super.initState();
+  final expiration = DateTime.tryParse(
+      (await ApiService.getUserData())['expiration'] ?? '');
+  if (expiration != null) {
+    final timeLeft = expiration.difference(DateTime.now().toUtc());
+    if (timeLeft.inMinutes < 15) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Warning: Your session will expire in ${timeLeft.inMinutes} minutes. Consider logging in again soon.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      });
+    }
+  }
+}
 
   @override
   Widget build(BuildContext context) {

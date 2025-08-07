@@ -16,7 +16,7 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static const String _baseUrl = 'https://9e47416442e1.ngrok-free.app/v1';
+  static const String _baseUrl = 'https://7ed28811cf08.ngrok-free.app/v1';
   static const Duration _timeoutDuration = Duration(seconds: 60);
   static const Duration _tokenExpirationThreshold = Duration(minutes: 5);
   static const _storage = FlutterSecureStorage();
@@ -417,38 +417,40 @@ static Future<String> generateChildQRCode({
   });
 }
 
-  static Future<Map<String, dynamic>> updateParent({
-    required String token,
-    required String userId,
-    required String phone,
-    required String location,
-  }) async {
-    return await safeApiCall(() async {
-      final url = Uri.parse('$_baseUrl/parents/$userId');
-      final response = await http.put(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'phone': phone,
-          'location': location,
-        }),
-      );
+static Future<Map<String, dynamic>> updateParent({
+  required String token,
+  required String userId,
+  required String phone,
+  required String location,
+}) async {
+  return await safeApiCall(() async {
+    final url = Uri.parse('$_baseUrl/parents/$userId');
+    print('Update request - URL: $url, Token: $token, Body: {"phone": "$phone", "location": "$location"}'); // Debug log
+    final response = await http.put(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'phone': phone,
+        'location': location,
+      }),
+    );
 
-      final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body);
+    print('Update response: ${response.statusCode} - $data'); // Debug log
 
-      if (response.statusCode == 200) {
-        return data;
-      }
+    if (response.statusCode == 200) {
+      return data;
+    }
 
-      throw ApiException(
-        data['message'] ?? 'Failed to update parent',
-        response.statusCode,
-      );
-    });
-  }
+    throw ApiException(
+      data['message'] ?? 'Failed to update parent',
+      response.statusCode,
+    );
+  });
+}
   static Future<Map<String, dynamic>> verifyQRCode({
   required String qrCode,
   required String token,
@@ -484,6 +486,45 @@ static Future<String> generateChildQRCode({
       default:
         throw ApiException('Failed to verify QR code');
     }
+  });
+}
+
+// Add this method to the ApiService class in New_api.dart
+static Future<Map<String, dynamic>> createChild({
+  required String token,
+  required String parentId,
+  required String fullname,
+  required String grade,
+  required String gender,
+}) async {
+  return await safeApiCall(() async {
+    final url = Uri.parse('$_baseUrl/children');
+    print('Create child request - URL: $url, Token: $token, Body: {"parentId": "$parentId", "fullname": "$fullname", "grade": "$grade", "gender": "$gender"}'); // Debug log
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'parentID': parentId,
+        'fullname': fullname,
+        'grade': grade,
+        'gender': gender,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+    print('Create child response: ${response.statusCode} - $data'); // Debug log
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return data;
+    }
+
+    throw ApiException(
+      data['message'] ?? 'Failed to create child',
+      response.statusCode,
+    );
   });
 }
 
