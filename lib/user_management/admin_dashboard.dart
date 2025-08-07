@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:safenest/api/New_api.dart';
 
+/// Data model for admin dashboard statistics
 class DashboardStats {
   final int totalParents;
   final int totalTeachers;
@@ -16,6 +17,7 @@ class DashboardStats {
     required this.message,
   });
 
+  /// Creates a DashboardStats instance from JSON data
   factory DashboardStats.fromJson(Map<String, dynamic> json) {
     return DashboardStats(
       totalParents: json['totalParents'] ?? 0,
@@ -27,6 +29,7 @@ class DashboardStats {
   }
 }
 
+/// Admin dashboard screen showing system statistics and management options
 class AdminDashboard extends StatefulWidget {
   final String email;
   final String fullname;
@@ -52,26 +55,50 @@ class _AdminDashboardState extends State<AdminDashboard> {
     _dashboardStats = _fetchDashboardStats();
   }
 
+  /// Fetches dashboard statistics from the API
   Future<DashboardStats> _fetchDashboardStats() async {
     try {
       final response = await ApiService.getAdminDashboard(widget.token);
       return DashboardStats.fromJson(response);
     } catch (e) {
-      throw ApiException('Failed to load dashboard stats: $e');
+      throw ApiException('Failed to load dashboard stats: ${e.toString()}');
     }
   }
 
+  /// Refreshes dashboard data
   Future<void> _refreshDashboard() async {
     setState(() {
       _dashboardStats = _fetchDashboardStats();
     });
   }
 
+  /// Handles user logout
+  Future<void> _handleLogout(BuildContext context) async {
+    try {
+      await ApiService.logout();
+      if (!context.mounted) return;
+      Navigator.pushReplacementNamed(context, '/login');
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Logout failed: ${e.toString()}'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Container(
+        title: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 18),
           decoration: BoxDecoration(
             color: Colors.blue[50],
@@ -91,104 +118,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refreshDashboard,
+            tooltip: 'Refresh data',
           ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => _handleLogout(context),
+            tooltip: 'Logout',
           ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _refreshDashboard,
+        color: Colors.blue,
         child: FutureBuilder<DashboardStats>(
           future: _dashboardStats,
           builder: (context, snapshot) {
-            return ListView(
-              padding: const EdgeInsets.all(15),
-              children: [
-                const SizedBox(height: 3),
-                Text(
-                  'Hello ${widget.fullname}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildActionButton(
-                      context,
-                      icon: Icons.family_restroom,
-                      label: 'Add Parent',
-                      onPressed: () => Navigator.pushNamed(context, '/new_parent', arguments: widget.token),
-                    ),
-                    _buildActionButton(
-                      context,
-                      icon: Icons.school,
-                      label: 'Add Teacher',
-                      onPressed: () => Navigator.pushNamed(context, '/new_teacher', arguments: widget.token),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 25),
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  const Center(child: CircularProgressIndicator())
-                else if (snapshot.hasError)
-                  Column(
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 50),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Error: ${snapshot.error}',
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: _refreshDashboard,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  )
-                else if (!snapshot.hasData)
-                  const Text('No data available')
-                else
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    childAspectRatio: 1.3,
-                    crossAxisSpacing: 15,
-                    mainAxisSpacing: 15,
-                    children: [
-                      _buildStatCard(
-                        icon: Icons.family_restroom,
-                        value: snapshot.data!.totalParents.toString(),
-                        label: 'Parents',
-                        color: Colors.blue,
-                      ),
-                      _buildStatCard(
-                        icon: Icons.child_care,
-                        value: snapshot.data!.totalChildren.toString(),
-                        label: 'Children',
-                        color: Colors.green,
-                      ),
-                      _buildStatCard(
-                        icon: Icons.school,
-                        value: snapshot.data!.totalTeachers.toString(),
-                        label: 'Teachers',
-                        color: Colors.orange,
-                      ),
-                      _buildStatCard(
-                        icon: Icons.event_available,
-                        value: snapshot.data!.totalPickups.toString(),
-                        label: 'Total Pickups',
-                        color: Colors.purple,
-                      ),
-                    ],
-                  ),
-              ],
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: _buildDashboardContent(snapshot),
             );
           },
         ),
@@ -196,6 +143,150 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  /// Builds the appropriate content based on the snapshot state
+  Widget _buildDashboardContent(AsyncSnapshot<DashboardStats> snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator());
+    } else if (snapshot.hasError) {
+      return _buildErrorState(snapshot.error.toString());
+    } else if (!snapshot.hasData) {
+      return _buildEmptyState();
+    } else {
+      return _buildStatsGrid(snapshot.data!);
+    }
+  }
+
+  /// Builds the stats grid when data is available
+  Widget _buildStatsGrid(DashboardStats data) {
+    return ListView(
+      padding: const EdgeInsets.all(15),
+      children: [
+        const SizedBox(height: 3),
+        Text(
+          'Hello ${widget.fullname}',
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildActionButton(
+              context,
+              icon: Icons.family_restroom,
+              label: 'Add Parent',
+              onPressed: () => _navigateTo('/new_parent'),
+            ),
+            _buildActionButton(
+              context,
+              icon: Icons.school,
+              label: 'Add Teacher',
+              onPressed: () => _navigateTo('/new_teacher'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 25),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          childAspectRatio: 1.3,
+          crossAxisSpacing: 15,
+          mainAxisSpacing: 15,
+          children: [
+            _buildStatCard(
+              icon: Icons.family_restroom,
+              value: data.totalParents.toString(),
+              label: 'Parents',
+              color: Colors.blue,
+            ),
+            _buildStatCard(
+              icon: Icons.child_care,
+              value: data.totalChildren.toString(),
+              label: 'Children',
+              color: Colors.green,
+            ),
+            _buildStatCard(
+              icon: Icons.school,
+              value: data.totalTeachers.toString(),
+              label: 'Teachers',
+              color: Colors.orange,
+            ),
+            _buildStatCard(
+              icon: Icons.event_available,
+              value: data.totalPickups.toString(),
+              label: 'Total Pickups',
+              color: Colors.purple,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Builds an error state widget
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 50),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'Error loading dashboard data\n${_formatErrorMessage(error)}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _refreshDashboard,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Try Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Formats error messages for display
+  String _formatErrorMessage(String error) {
+    if (error.contains('401')) return 'Session expired. Please login again.';
+    if (error.contains('network')) return 'Network error. Check your connection.';
+    return error;
+  }
+
+  /// Builds an empty state widget
+  Widget _buildEmptyState() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.info_outline, color: Colors.blue, size: 50),
+          SizedBox(height: 16),
+          Text('No data available'),
+        ],
+      ),
+    );
+  }
+
+  /// Navigates to a route with slide transition
+  void _navigateTo(String route) {
+    Navigator.pushNamed(
+      context,
+      route,
+      arguments: widget.token,
+    );
+  }
+
+  /// Builds an action button with icon and label
   Widget _buildActionButton(
     BuildContext context, {
     required IconData icon,
@@ -208,6 +299,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
       ),
       onPressed: onPressed,
       icon: Icon(icon, size: 24),
@@ -215,6 +308,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  /// Builds a statistic card with icon, value and label
   Widget _buildStatCard({
     required IconData icon,
     required String value,
@@ -252,18 +346,5 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
       ),
     );
-  }
-
-  void _handleLogout(BuildContext context) async {
-    try {
-      await ApiService.logout();
-      if (!context.mounted) return;
-      Navigator.pushReplacementNamed(context, '/login');
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Logout failed: $e')),
-      );
-    }
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +6,7 @@ import 'package:safenest/api/New_api.dart';
 import 'package:safenest/data_entries/add_child.dart';
 import 'package:safenest/data_entries/update_parent.dart';
 
+/// Parent dashboard screen showing registered children and QR code generation
 class ParentDashboard extends StatefulWidget {
   final String userId;
   final String roleId;
@@ -29,6 +29,12 @@ class ParentDashboard extends StatefulWidget {
 
 class _ParentDashboardState extends State<ParentDashboard>
     with SingleTickerProviderStateMixin {
+  // Constants for consistent styling
+  static const _primaryColor = Color(0xFF5271FF);
+  static const _accentColor = Color(0xFF00C9FF);
+  static const _whiteColor = Colors.white;
+  static const _darkColor = Color(0xFF1A1A2E);
+
   List<Map<String, dynamic>> _children = [];
   bool _isLoading = false;
   String? _generatedQRCode;
@@ -36,23 +42,23 @@ class _ParentDashboardState extends State<ParentDashboard>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
-  static const _primaryColor = Color(0xFF5271FF);
-  static const _accentColor = Color(0xFF00C9FF);
-  static const _whiteColor = Colors.white;
-  static const _darkColor = Color(0xFF1A1A2E);
-
   @override
   void initState() {
     super.initState();
+    // Initialize animations
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 800),
     );
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeOutQuart,
+      ),
     );
     _loadChildren();
 
+    // Start animation after first frame
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _animationController.forward();
     });
@@ -64,6 +70,7 @@ class _ParentDashboardState extends State<ParentDashboard>
     super.dispose();
   }
 
+  /// Loads children data from API
   Future<void> _loadChildren() async {
     setState(() => _isLoading = true);
     try {
@@ -72,11 +79,13 @@ class _ParentDashboardState extends State<ParentDashboard>
         _children = children;
         _isLoading = false;
       });
-    } on ApiException catch (_) {
+    } on ApiException catch (e) {
       setState(() => _isLoading = false);
+      _showErrorSnackbar('Failed to load children: ${e.message}');
     }
   }
 
+  /// Generates QR code for child pickup
   Future<void> _generateQRCode(String childId, String childName) async {
     try {
       setState(() => _isLoading = true);
@@ -94,22 +103,19 @@ class _ParentDashboardState extends State<ParentDashboard>
       _showQRDialog(childName);
     } on ApiException catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.message}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showErrorSnackbar('QR generation failed: ${e.message}');
     }
   }
 
+  /// Shows QR code in a dialog
   void _showQRDialog(String childName) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.all(20),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
           decoration: BoxDecoration(
             color: _whiteColor,
             borderRadius: BorderRadius.circular(24),
@@ -203,31 +209,38 @@ class _ParentDashboardState extends State<ParentDashboard>
     );
   }
 
+  /// Handles user logout
   Future<void> _logout() async {
     try {
       await ApiService.logout();
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/login',
-          (route) => false,
-        );
-      }
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/login',
+        (route) => false,
+      );
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Logout failed: ${e.message}'),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        _showErrorSnackbar('Logout failed: ${e.message}');
       }
     }
   }
 
+  /// Shows error message in a snackbar
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
+  /// Navigates to add child screen with slide transition
   void _navigateToAddChild() {
     Navigator.push(
       context,
@@ -240,9 +253,8 @@ class _ParentDashboardState extends State<ParentDashboard>
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           const begin = Offset(0.0, 1.0);
           const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween =
-              Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          const curve = Curves.easeInOutQuart;
+          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
           return SlideTransition(
             position: animation.drive(tween),
             child: child,
@@ -252,18 +264,20 @@ class _ParentDashboardState extends State<ParentDashboard>
     );
   }
 
+  /// Navigates to update parent profile screen
   void _navigateToUpdateParent() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => UpdateParentScreen(
-          userId: widget.roleId, // Pass roleId as userId (ParentID)
+          userId: widget.roleId,
           token: widget.token,
         ),
       ),
     );
   }
 
+  /// Builds a child card widget with animation
   Widget _buildChildCard(Map<String, dynamic> child, int index) {
     return AnimatedBuilder(
       animation: _animationController,
@@ -360,7 +374,8 @@ class _ParentDashboardState extends State<ParentDashboard>
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Container(
+        title: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
           decoration: BoxDecoration(
             color: _primaryColor.withOpacity(0.1),
@@ -384,10 +399,12 @@ class _ParentDashboardState extends State<ParentDashboard>
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: _navigateToUpdateParent,
+            tooltip: 'Settings',
           ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _logout,
+            tooltip: 'Logout',
           ),
         ],
       ),
@@ -400,6 +417,7 @@ class _ParentDashboardState extends State<ParentDashboard>
       ),
       body: RefreshIndicator(
         onRefresh: _loadChildren,
+        color: _primaryColor,
         child: Stack(
           children: [
             CustomScrollView(

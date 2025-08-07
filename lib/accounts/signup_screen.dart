@@ -1,7 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:safenest/accounts/auth_form.dart';
+import 'package:safenest/accounts/login_screen.dart';
 import 'package:safenest/api/New_api.dart';
 
+/// Registration screen that allows new users to create an account.
+/// Features:
+/// - Full name field
+/// - Email validation
+/// - Password validation (min 8 chars)
+/// - Password visibility toggle
+/// - Role selection (Parent/Teacher)
+/// - Link to login screen
+/// - Error handling with user-friendly messages
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -17,8 +27,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
   String _selectedRole = 'Parent';
   bool _isLoading = false;
   String? _errorMessage;
-  bool _obscurePassword = true; // Add this line
+  bool _obscurePassword = true;
 
+  /// Handles the registration process by:
+  /// 1. Validating the form
+  /// 2. Calling the API service
+  /// 3. Handling success/error cases
+  /// 4. Navigating to appropriate dashboard based on user role
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -53,6 +68,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         throw ApiException('Unauthorized role: $role');
       }
 
+      // Navigate with fade transition
       Navigator.pushReplacementNamed(
         context,
         allowedRoles[role]!,
@@ -67,16 +83,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
     } on ApiException catch (e) {
       setState(() => _errorMessage = _parseError(e));
     } catch (e) {
-      setState(() => _errorMessage = 'An unexpected error occurred');
+      setState(() => _errorMessage = 'Registration failed. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  /// Converts API exception messages to user-friendly error messages
   String _parseError(ApiException e) {
-    if (e.message.contains('400')) return 'Invalid input data';
-    if (e.message.contains('409')) return 'Email already registered';
-    return e.message;
+    if (e.message.contains('400')) return 'Please check your input and try again.';
+    if (e.message.contains('409')) return 'This email is already registered.';
+    if (e.message.contains('network')) return 'Network error. Please check your connection.';
+    return 'Registration error: ${e.message}';
   }
 
   @override
@@ -97,7 +115,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
       errorMessage: _errorMessage,
       onAction: _handleSignUp,
       alternateActionText: 'Already have an account? Login',
-      onAlternateAction: () => Navigator.pushNamed(context, '/login'),
+      onAlternateAction: () => Navigator.push(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => const LoginScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(-1.0, 0.0),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            );
+          },
+        ),
+      ),
       logo: Image.asset(
         'assets/safenest.png',
         height: 80,
@@ -109,17 +141,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
           key: _formKey,
           child: Column(
             children: [
+              // Full name field
               TextFormField(
                 controller: _nameController,
                 decoration: _inputDecoration('Full Name', Icons.person_outline),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Please enter your name';
+                    return 'Please enter your full name';
+                  }
+                  if (value.length < 3) {
+                    return 'Name must be at least 3 characters';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 20),
+              // Email field
               TextFormField(
                 controller: _emailController,
                 decoration: _inputDecoration('Email', Icons.email_outlined),
@@ -129,15 +166,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     return 'Please enter your email';
                   }
                   if (!value.contains('@')) {
-                    return 'Please enter a valid email';
+                    return 'Please enter a valid email address';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 20),
+              // Password field with visibility toggle
               TextFormField(
                 controller: _passwordController,
-                obscureText: _obscurePassword, // Use the state variable here
+                obscureText: _obscurePassword,
                 decoration: _inputDecoration('Password', Icons.lock_outline).copyWith(
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -162,6 +200,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 },
               ),
               const SizedBox(height: 20),
+              // Role selection dropdown
               DropdownButtonFormField<String>(
                 value: _selectedRole,
                 decoration: _inputDecoration('Role', Icons.people_outline),
@@ -180,11 +219,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           ),
                         ))
                     .toList(),
-                onChanged: (value) =>
-                    setState(() => _selectedRole = value ?? 'Parent'),
+                onChanged: _isLoading
+                    ? null
+                    : (value) => setState(() => _selectedRole = value ?? 'Parent'),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Please select a role';
+                    return 'Please select your role';
                   }
                   return null;
                 },
@@ -196,6 +236,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  /// Creates a consistent input decoration for form fields
   InputDecoration _inputDecoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,

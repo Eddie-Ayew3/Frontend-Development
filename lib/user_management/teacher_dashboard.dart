@@ -3,6 +3,7 @@ import 'package:safenest/api/New_api.dart';
 import 'package:safenest/data_entries/qr_scanner_screen.dart';
 import 'package:safenest/data_entries/update_teacher.dart';
 
+/// Teacher dashboard screen with action buttons for school operations
 class TeacherDashboard extends StatefulWidget {
   final String userId;
   final String roleId;
@@ -25,26 +26,32 @@ class TeacherDashboard extends StatefulWidget {
 
 class _TeacherDashboardState extends State<TeacherDashboard>
     with SingleTickerProviderStateMixin {
-  bool _isLoading = false;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-
+  // Constants for consistent styling
   static const _primaryColor = Color(0xFF5271FF);
   static const _accentColor = Color(0xFF00C9FF);
   static const _whiteColor = Colors.white;
   static const _darkColor = Color(0xFF1A1A2E);
 
+  bool _isLoading = false;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
   @override
   void initState() {
     super.initState();
+    // Initialize animations
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 800),
     );
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeOutQuart,
+      ),
     );
 
+    // Start animation after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _animationController.forward();
     });
@@ -56,6 +63,7 @@ class _TeacherDashboardState extends State<TeacherDashboard>
     super.dispose();
   }
 
+  /// Handles user logout
   Future<void> _logout() async {
     try {
       setState(() => _isLoading = true);
@@ -68,15 +76,7 @@ class _TeacherDashboardState extends State<TeacherDashboard>
       );
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Logout failed: ${e.message}'),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        _showErrorSnackbar('Logout failed: ${e.message}');
       }
     } finally {
       if (mounted) {
@@ -85,6 +85,21 @@ class _TeacherDashboardState extends State<TeacherDashboard>
     }
   }
 
+  /// Shows error message in a snackbar
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
+  /// Navigates to update teacher profile screen
   void _navigateToUpdateTeacher() {
     Navigator.push(
       context,
@@ -97,16 +112,17 @@ class _TeacherDashboardState extends State<TeacherDashboard>
     );
   }
 
+  /// Navigates to QR scanner screen
   void _navigateToQRScanner() {
     Navigator.push(
       context,
       MaterialPageRoute(
-      builder: (_) => QRScannerScreen(token: widget.token),
-    ),
-
+        builder: (_) => QRScannerScreen(token: widget.token),
+      ),
     );
   }
 
+  /// Builds an action button with animation
   Widget _buildActionButton(IconData icon, String label, VoidCallback onPressed) {
     return AnimatedBuilder(
       animation: _animationController,
@@ -184,7 +200,8 @@ class _TeacherDashboardState extends State<TeacherDashboard>
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Container(
+        title: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
           decoration: BoxDecoration(
             color: _primaryColor.withOpacity(0.1),
@@ -208,10 +225,12 @@ class _TeacherDashboardState extends State<TeacherDashboard>
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: _navigateToUpdateTeacher,
+            tooltip: 'Settings',
           ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _logout,
+            tooltip: 'Logout',
           ),
         ],
       ),
@@ -279,6 +298,7 @@ class _TeacherDashboardState extends State<TeacherDashboard>
                     'View Classes',
                     () {
                       // TODO: Implement view classes functionality
+                      _showComingSoonSnackbar();
                     },
                   ),
                   _buildActionButton(
@@ -286,6 +306,7 @@ class _TeacherDashboardState extends State<TeacherDashboard>
                     'Student List',
                     () {
                       // TODO: Implement student list functionality
+                      _showComingSoonSnackbar();
                     },
                   ),
                 ]),
@@ -298,6 +319,17 @@ class _TeacherDashboardState extends State<TeacherDashboard>
               child: CircularProgressIndicator(color: _primaryColor),
             ),
         ],
+      ),
+    );
+  }
+
+  /// Shows a "coming soon" snackbar for unimplemented features
+  void _showComingSoonSnackbar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('This feature is coming soon!'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
       ),
     );
   }
