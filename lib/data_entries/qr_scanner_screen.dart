@@ -19,7 +19,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
 
   static const _primaryColor = Color(0xFF5271FF);
   static const _whiteColor = Colors.white;
-  static const _darkColor = Color(0xFF1A1A2E);
   static const _lightGrey = Color(0xFFF5F5F5);
 
   @override

@@ -16,7 +16,7 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static const String _baseUrl = 'https://8befd4f63fba.ngrok-free.app/v1';
+  static const String _baseUrl = 'https://9e47416442e1.ngrok-free.app/v1';
   static const Duration _timeoutDuration = Duration(seconds: 60);
   static const Duration _tokenExpirationThreshold = Duration(minutes: 5);
   static const _storage = FlutterSecureStorage();

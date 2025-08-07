@@ -4,11 +4,13 @@ import 'package:safenest/api/New_api.dart';
 class UpdateParentScreen extends StatefulWidget {
   final String userId;
   final String token;
+  final Map<String, dynamic>? currentParentData;
 
   const UpdateParentScreen({
     super.key,
     required this.userId,
     required this.token,
+    this.currentParentData,
   });
 
   @override
@@ -21,6 +23,16 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
   final TextEditingController _locationController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize form with current values if available
+    if (widget.currentParentData != null) {
+      _phoneController.text = widget.currentParentData!['phone'] ?? '';
+      _locationController.text = widget.currentParentData!['location'] ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -38,6 +50,12 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
     });
 
     try {
+      // Check token validity first
+      final authStatus = await ApiService.checkAuthStatus();
+      if (authStatus == null) {
+        throw ApiException('Session expired. Please login again.');
+      }
+
       await ApiService.safeApiCall(() => ApiService.updateParent(
             token: widget.token,
             userId: widget.userId,
@@ -46,7 +64,7 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
           ));
 
       if (!mounted) return;
-      _showSuccessDialog('Parent updated successfully!');
+      _showSuccessDialog('Parent information updated successfully!');
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _errorMessage = _mapErrorToMessage(e));
@@ -54,7 +72,7 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = 'An unexpected error occurred');
+        setState(() => _errorMessage = 'An unexpected error occurred. Please try again.');
         _showErrorDialog(_errorMessage!);
       }
     } finally {
@@ -65,12 +83,16 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
   Future<void> _showSuccessDialog(String message) async {
     await showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text('Success'),
         content: Text(message),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context, true); // Return success to previous screen
+            },
             child: const Text('OK'),
           ),
         ],
@@ -85,16 +107,21 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
         title: const Text('Error'),
         content: Text(message),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              _submitForm(); // Retry
-            },
-            child: const Text('Retry'),
-          ),
+          if (_errorMessage != 'Session expired. Please login again.')
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context); // Close dialog
+                if (_formKey.currentState!.validate()) {
+                  _submitForm(); // Only retry if form is valid
+                }
+              },
+              child: const Text('Retry'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+            child: Text(_errorMessage == 'Session expired. Please login again.' 
+                ? 'OK' 
+                : 'Cancel'),
           ),
         ],
       ),
@@ -104,36 +131,98 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
   String _mapErrorToMessage(ApiException e) {
     switch (e.message) {
       case 'Network error':
-        return 'Please check your internet connection';
+        return 'Please check your internet connection and try again.';
       case 'Invalid phone number':
-        return 'Please enter a valid Ghana phone number (e.g., +233XXXXXXXXX)';
+        return 'Please enter a valid Ghana phone number (e.g., 0244123456 or +233244123456)';
       case 'Unauthorized':
+      case 'You can only update your own profile.':
         return 'You are not authorized to perform this action';
+      case 'Parent not found':
+        return 'Parent account not found. Please contact support.';
+      case 'Failed to update parent':
+        return 'Failed to save changes. Please try again.';
+      case 'Session expired':
+        return 'Session expired. Please login again.';
       default:
         return e.message;
     }
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    TextInputType? keyboardType,
-    required String? Function(String?) validator,
-    IconData? prefixIcon,
-  }) {
+  Widget _buildPhoneField() {
     return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
+      controller: _phoneController,
+      keyboardType: TextInputType.phone,
+      maxLength: 15,
       decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        labelText: 'Phone Number',
+        prefixIcon: const Icon(Icons.phone_outlined),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         filled: true,
         fillColor: Colors.grey[50],
+        counterText: '',
+        hintText: '0244123456 or +233244123456',
       ),
-      validator: validator,
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Please enter phone number';
+        }
+        if (!RegExp(r'^(\+233|0)\d{9}$').hasMatch(value)) {
+          return 'Enter a valid Ghana phone number';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildLocationField() {
+    return TextFormField(
+      controller: _locationController,
+      decoration: InputDecoration(
+        labelText: 'Location',
+        prefixIcon: const Icon(Icons.location_on_outlined),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        filled: true,
+        fillColor: Colors.grey[50],
+        hintText: 'Enter your current location',
+      ),
+      maxLength: 100,
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Please enter location';
+        }
+        if (value.length < 3) {
+          return 'Location must be at least 3 characters';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return ElevatedButton(
+      onPressed: _isLoading ? null : _submitForm,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF5271FF),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        minimumSize: const Size(double.infinity, 50),
+      ),
+      child: _isLoading
+          ? const SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 3,
+              ),
+            )
+          : const Text(
+              'Update Information',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
     );
   }
 
@@ -141,73 +230,38 @@ class _UpdateParentScreenState extends State<UpdateParentScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Update Parent'),
+        title: const Text('Update Profile'),
         backgroundColor: const Color(0xFF5271FF),
         foregroundColor: Colors.white,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
-          child: ListView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Updating Parent ID: ${widget.userId}',
-                style: const TextStyle(
+                'Updating your profile information',
+                style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
+                  color: Colors.grey[600],
                 ),
-              ),
-              const SizedBox(height: 16),
-              _buildTextField(
-                controller: _phoneController,
-                label: 'Phone Number',
-                prefixIcon: Icons.phone_outlined,
-                keyboardType: TextInputType.phone,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter phone number';
-                  }
-                  if (!RegExp(r'^\+233\d{9}$').hasMatch(value)) {
-                    return 'Enter a valid Ghana phone number (e.g., +233XXXXXXXXX)';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildTextField(
-                controller: _locationController,
-                label: 'Location',
-                prefixIcon: Icons.location_on_outlined,
-                validator: (value) =>
-                    value == null || value.isEmpty ? 'Please enter location' : null,
               ),
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _submitForm,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF5271FF),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              _buildPhoneField(),
+              const SizedBox(height: 16),
+              _buildLocationField(),
+              const SizedBox(height: 32),
+              _buildSubmitButton(),
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red),
                   ),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 3,
-                        ),
-                      )
-                    : const Text(
-                        'Update Parent',
-                        style: TextStyle(fontSize: 16),
-                      ),
-              ),
             ],
           ),
         ),
