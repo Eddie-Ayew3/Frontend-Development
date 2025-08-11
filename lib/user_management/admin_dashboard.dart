@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:safenest/api/New_api.dart';
+import 'package:safenest/api/pickup_log.dart';
 
 /// Data model for admin dashboard statistics
 class DashboardStats {
@@ -48,11 +50,13 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   late Future<DashboardStats> _dashboardStats;
+  late Future<List<PickupLog>> _pickupLogs;
 
   @override
   void initState() {
     super.initState();
     _dashboardStats = _fetchDashboardStats();
+    _pickupLogs = _fetchPickupLogs();
   }
 
   /// Fetches dashboard statistics from the API
@@ -65,10 +69,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  /// Fetches pickup logs from the API
+  Future<List<PickupLog>> _fetchPickupLogs() async {
+    try {
+      final response = await ApiService.getPickupLogs(widget.token);
+      return (response as List).map((log) => PickupLog.fromJson(log)).toList();
+    } catch (e) {
+      throw ApiException('Failed to load pickup logs: ${e.toString()}');
+    }
+  }
+
   /// Refreshes dashboard data
   Future<void> _refreshDashboard() async {
     setState(() {
       _dashboardStats = _fetchDashboardStats();
+      _pickupLogs = _fetchPickupLogs();
     });
   }
 
@@ -222,6 +237,72 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           ],
         ),
+        _buildPickupLogsSection(),
+      ],
+    );
+  }
+
+  /// Builds the pickup logs section
+  Widget _buildPickupLogsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        const Text(
+          'Recent Pickups',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        FutureBuilder<List<PickupLog>>(
+          future: _pickupLogs,
+          builder: (context, logsSnapshot) {
+            if (logsSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            } else if (logsSnapshot.hasError) {
+              return _buildErrorState(logsSnapshot.error.toString());
+            } else if (!logsSnapshot.hasData || logsSnapshot.data!.isEmpty) {
+              return const Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 50),
+                    SizedBox(height: 16),
+                    Text('No pickup records found'),
+                  ],
+                ),
+              );
+            } else {
+              return ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: logsSnapshot.data!.length,
+                itemBuilder: (context, index) {
+                  final log = logsSnapshot.data![index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.check_circle, color: Colors.green),
+                      title: Text(log.childName),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Parent: ${log.parentName}'),
+                          Text('Verified by: ${log.verifiedBy}'),
+                        ],
+                      ),
+                      trailing: Text(
+                        DateFormat('MMM d, hh:mm a').format(log.verifiedAt),
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ),
+                  );
+                },
+              );
+            }
+          },
+        ),
       ],
     );
   }
@@ -237,7 +318,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
-              'Error loading dashboard data\n${_formatErrorMessage(error)}',
+              'Error loading data\n${_formatErrorMessage(error)}',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.red),
             ),
@@ -308,7 +389,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  /// Builds a statistic card with icon, value and label
+  /// Builds a statistic card with icon, value, and label
   Widget _buildStatCard({
     required IconData icon,
     required String value,

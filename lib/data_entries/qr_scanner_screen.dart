@@ -37,86 +37,79 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     super.dispose();
   }
 
-  Future<void> _verifyQRCode(String qrCode) async {
-    if (_isProcessing || !mounted) return;
+Future<void> _verifyQRCode(String qrCode) async {
+  if (_isProcessing || !mounted) return;
 
-    setState(() => _isProcessing = true);
+  debugPrint('Verifying QR: ${qrCode.substring(0, 20)}...'); // Log partial code
 
-    try {
-      final result = await ApiService.verifyQRCode(
-        qrCode: qrCode,
-        token: widget.token,
-      );
+  setState(() => _isProcessing = true);
 
-      if (!mounted) return;
+  try {
+    final result = await ApiService.verifyQRCode(
+      qrCode: qrCode,
+      token: widget.token,
+    );
 
-      _showVerificationSuccess(
-        result['childName'] ?? 'Unknown',
-        result['grade'] ?? 'N/A',
-        result['verifiedAt'] ?? DateTime.now().toString(),
-      );
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
+    if (!mounted) return;
+
+    _showVerificationResult(
+      success: true,
+      childName: result['childName'],
+      grade: result['grade'],
+      parentName: result['parentName'],
+      verifiedAt: result['verifiedAt'],
+    );
+  } on ApiException catch (e) {
+    if (!mounted) return;
+    _showVerificationResult(
+      success: false,
+      errorMessage: e.message,
+    );
+  } finally {
+    if (mounted) {
+      setState(() => _isProcessing = false);
     }
   }
+}
 
-  void _showVerificationSuccess(String childName, String grade, String verifiedAt) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text(
-          'Pickup Verified',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildDetailRow('Child:', childName),
-            const SizedBox(height: 12),
-            _buildDetailRow('Grade:', grade),
-            const SizedBox(height: 12),
-            _buildDetailRow('Time:', _formatDateTime(verifiedAt)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
+void _showVerificationResult({
+  required bool success,
+  String? childName,
+  String? grade,
+  String? parentName,
+  String? verifiedAt,
+  String? errorMessage,
+}) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: Text(success ? 'PICKUP VERIFIED' : 'VERIFICATION FAILED'),
+      content: success
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDetailRow('Child:', childName ?? 'Unknown'),
+                _buildDetailRow('Grade:', grade ?? 'N/A'),
+                _buildDetailRow('Parent:', parentName ?? 'Unknown'),
+                _buildDetailRow('Time:', _formatDateTime(verifiedAt!)),
+              ],
+            )
+          : Text(errorMessage ?? 'Unknown error occurred'),
+      actions: [
+        TextButton(
+          child: Text(success ? 'CONTINUE' : 'TRY AGAIN'),
+          onPressed: () {
+            Navigator.pop(context);
+            if (success) {
               cameraController.start();
-            },
-            child: const Text(
-              'SCAN NEXT',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: _primaryColor,
-              ),
-            ),
-          ),
-        ],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+            }
+          },
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 
   Widget _buildDetailRow(String label, String value) {
     return Row(

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:safenest/api/pickup_log.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -16,7 +18,7 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  static const String _baseUrl = 'https://7ed28811cf08.ngrok-free.app/v1';
+  static const String _baseUrl = 'https://c2e7685a5bb3.ngrok-free.app/v1';
   static const Duration _timeoutDuration = Duration(seconds: 60);
   static const Duration _tokenExpirationThreshold = Duration(minutes: 5);
   static const _storage = FlutterSecureStorage();
@@ -30,6 +32,10 @@ class ApiService {
 
   static Future<dynamic> safeApiCall(Future<dynamic> Function() apiCall) async {
     try {
+      final authData = await checkAuthStatus();
+      if (authData == null) {
+        throw ApiException('Session expired. Please login again.', 401);
+      }
       return await apiCall().timeout(_timeoutDuration);
     } on http.ClientException catch (e) {
       throw ApiException('Network error: ${e.message}');
@@ -50,6 +56,7 @@ class ApiService {
     required String roleId,
     required String expiration,
   }) async {
+    debugPrint('Saving user data: email=$email, fullname=$fullname, role=$role, roleId=$roleId');
     await Future.wait([
       _storage.write(key: _tokenKey, value: token),
       _storage.write(key: _emailKey, value: email),
@@ -61,13 +68,21 @@ class ApiService {
   }
 
   static Future<Map<String, String?>> getUserData() async {
+    final data = await Future.wait([
+      _storage.read(key: _tokenKey),
+      _storage.read(key: _emailKey),
+      _storage.read(key: _fullnameKey),
+      _storage.read(key: _roleKey),
+      _storage.read(key: _roleIdKey),
+      _storage.read(key: _expirationKey),
+    ]);
     return {
-      'token': await _storage.read(key: _tokenKey),
-      'email': await _storage.read(key: _emailKey),
-      'fullname': await _storage.read(key: _fullnameKey),
-      'role': await _storage.read(key: _roleKey),
-      'roleId': await _storage.read(key: _roleIdKey),
-      'expiration': await _storage.read(key: _expirationKey),
+      'token': data[0],
+      'email': data[1],
+      'fullname': data[2],
+      'role': data[3],
+      'roleId': data[4],
+      'expiration': data[5],
     };
   }
 
@@ -76,6 +91,7 @@ class ApiService {
   }
 
   static Future<void> clearUserData() async {
+    debugPrint('Clearing user data');
     await _storage.deleteAll();
   }
 
@@ -86,6 +102,7 @@ class ApiService {
       final now = DateTime.now().toUtc();
       return expirationDate.isBefore(now.add(_tokenExpirationThreshold));
     } catch (e) {
+      debugPrint('Error parsing token expiration: $e');
       return true;
     }
   }
@@ -95,9 +112,13 @@ class ApiService {
     final token = userData['token'];
     final expiration = userData['expiration'];
 
-    if (token == null) return null;
+    if (token == null) {
+      debugPrint('No token found in storage');
+      return null;
+    }
 
     if (_isTokenExpired(expiration)) {
+      debugPrint('Token expired, attempting refresh');
       try {
         final newToken = await refreshToken();
         final updatedData = await getUserData();
@@ -110,6 +131,7 @@ class ApiService {
           'expiration': updatedData['expiration'],
         };
       } catch (e) {
+        debugPrint('Token refresh failed: $e');
         await clearUserData();
         return null;
       }
@@ -130,15 +152,17 @@ class ApiService {
     if (token == null) throw ApiException('No token available');
 
     final url = Uri.parse('$_baseUrl/auth/refresh-token');
+    debugPrint('Refreshing token: $url');
     final response = await http.post(
       url,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-    );
+    ).timeout(_timeoutDuration);
 
     final data = jsonDecode(response.body);
+    debugPrint('Refresh token response: ${response.statusCode} - $data');
 
     if (response.statusCode == 200) {
       final newToken = data['token'];
@@ -160,65 +184,44 @@ class ApiService {
     );
   }
 
-  static Future<Map<String, dynamic>> getAdminDashboard(String token) async {
-    return await safeApiCall(() async {
-      final url = Uri.parse('$_baseUrl/admin/Data');
-      final response = await http.get(
-        url,
-        headers: {
-          'accept': '*/*',
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200) {
-        return data;
-      }
-
-      throw ApiException(
-        data['message'] ?? 'Failed to fetch dashboard data',
-        response.statusCode,
-      );
-    });
-  }
-
   static Future<Map<String, dynamic>> login({
     required String email,
     required String password,
   }) async {
-    final url = Uri.parse('$_baseUrl/auth/login');
-    final response = await http.post(
-      url,
-      headers: {
-        'accept': '*/*',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-      }),
-    ).timeout(_timeoutDuration);
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/auth/login');
+      debugPrint('Login request: $url, email=$email');
+      final response = await http.post(
+        url,
+        headers: {
+          'accept': '*/*',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+        }),
+      ).timeout(_timeoutDuration);
 
-    final data = jsonDecode(response.body);
+      final data = jsonDecode(response.body);
+      debugPrint('Login response: ${response.statusCode} - $data');
 
-    if (response.statusCode == 200) {
-      await setUserData(
-        token: data['token'],
-        email: data['email'],
-        fullname: data['fullname'],
-        role: data['role'],
-        roleId: data['roleId'].toString(),
-        expiration: data['expiration'],
+      if (response.statusCode == 200) {
+        await setUserData(
+          token: data['token'],
+          email: data['email'],
+          fullname: data['fullname'],
+          role: data['role'],
+          roleId: data['roleId'].toString(),
+          expiration: data['expiration'],
+        );
+        return data;
+      }
+      throw ApiException(
+        data['message'] ?? 'Login failed',
+        response.statusCode,
       );
-      return data;
-    }
-    throw ApiException(
-      data['message'] ?? 'Login failed',
-      response.statusCode,
-    );
+    });
   }
 
   static Future<Map<String, dynamic>> register({
@@ -227,48 +230,52 @@ class ApiService {
     required String password,
     required String role,
   }) async {
-    final url = Uri.parse('$_baseUrl/auth/register');
-    final response = await http.post(
-      url,
-      headers: {
-        'accept': '*/*',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'fullname': fullname,
-        'email': email,
-        'password': password,
-        'role': role,
-      }),
-    ).timeout(_timeoutDuration);
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/auth/register');
+      debugPrint('Register request: $url, email=$email, role=$role');
+      final response = await http.post(
+        url,
+        headers: {
+          'accept': '*/*',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'fullname': fullname,
+          'email': email,
+          'password': password,
+          'role': role,
+        }),
+      ).timeout(_timeoutDuration);
 
-    final data = jsonDecode(response.body);
+      final data = jsonDecode(response.body);
+      debugPrint('Register response: ${response.statusCode} - $data');
 
-    if (response.statusCode == 200) {
-      await setUserData(
-        token: data['token'] ?? '',
-        email: data['email'] ?? email,
-        fullname: data['fullname'] ?? fullname,
-        role: data['role'] ?? role,
-        roleId: data['id'].toString(),
-        expiration: data['expiration'] ??
-            DateTime.now().toUtc().add(const Duration(days: 1)).toIso8601String(),
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await setUserData(
+          token: data['token'] ?? '',
+          email: data['email'] ?? email,
+          fullname: data['fullname'] ?? fullname,
+          role: data['role'] ?? role,
+          roleId: data['id'].toString(),
+          expiration: data['expiration'] ??
+              DateTime.now().toUtc().add(const Duration(days: 1)).toIso8601String(),
+        );
+        return {
+          'message': data['message'],
+          'id': data['id'].toString(),
+          'role': role,
+          'token': data['token'] ?? '',
+          'email': data['email'] ?? email,
+          'fullname': data['fullname'] ?? fullname,
+          'expiration': data['expiration'] ??
+              DateTime.now().toUtc().add(const Duration(days: 1)).toIso8601String(),
+        };
+      }
+      throw ApiException(
+        data['message'] ?? 'Registration failed',
+        response.statusCode,
       );
-      return {
-        'message': data['message'],
-        'id': data['id'].toString(),
-        'role': role,
-        'token': data['token'] ?? '',
-        'email': data['email'] ?? email,
-        'fullname': data['fullname'] ?? fullname,
-        'expiration': data['expiration'] ??
-            DateTime.now().toUtc().add(const Duration(days: 1)).toIso8601String(),
-      };
-    }
-    throw ApiException(
-      data['message'] ?? 'Registration failed',
-      response.statusCode,
-    );
+    });
   }
 
   static Future<Map<String, dynamic>> createParent({
@@ -280,6 +287,7 @@ class ApiService {
   }) async {
     return await safeApiCall(() async {
       final url = Uri.parse('$_baseUrl/parents');
+      debugPrint('Create parent request: $url, email=$email');
       final response = await http.post(
         url,
         headers: {
@@ -295,6 +303,7 @@ class ApiService {
       );
 
       final data = jsonDecode(response.body);
+      debugPrint('Create parent response: ${response.statusCode} - $data');
 
       if (response.statusCode == 201) {
         return {
@@ -302,7 +311,6 @@ class ApiService {
           'id': data['id'],
         };
       }
-
       throw ApiException(
         data['message'] ?? 'Failed to create parent',
         response.statusCode,
@@ -319,6 +327,7 @@ class ApiService {
   }) async {
     return await safeApiCall(() async {
       final url = Uri.parse('$_baseUrl/teachers');
+      debugPrint('Create teacher request: $url, email=$email, grade=$grade');
       final response = await http.post(
         url,
         headers: {
@@ -334,6 +343,7 @@ class ApiService {
       );
 
       final data = jsonDecode(response.body);
+      debugPrint('Create teacher response: ${response.statusCode} - $data');
 
       if (response.statusCode == 201) {
         return {
@@ -341,9 +351,48 @@ class ApiService {
           'id': data['id'],
         };
       }
-
       throw ApiException(
         data['message'] ?? 'Failed to create teacher',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> createChild({
+    required String token,
+    required String parentId,
+    required String fullname,
+    required String grade,
+    required String gender,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/children');
+      debugPrint('Create child request: $url, parentId=$parentId, fullname=$fullname');
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'parentID': parentId,
+          'fullname': fullname,
+          'grade': grade,
+          'gender': gender,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      debugPrint('Create child response: ${response.statusCode} - $data');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {
+          'message': data['message'] ?? 'Child created successfully',
+          'id': data['id'],
+        };
+      }
+      throw ApiException(
+        data['message'] ?? 'Failed to create child',
         response.statusCode,
       );
     });
@@ -354,6 +403,7 @@ class ApiService {
   }) async {
     return await safeApiCall(() async {
       final url = Uri.parse('$_baseUrl/parents/children');
+      debugPrint('Get parent children request: $url');
       final response = await http.get(
         url,
         headers: {
@@ -362,6 +412,7 @@ class ApiService {
         },
       );
 
+      debugPrint('Get parent children response: ${response.statusCode}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data is! List) {
@@ -387,146 +438,274 @@ class ApiService {
     });
   }
 
-static Future<String> generateChildQRCode({
-  required String childId,
-  required String token,
-}) async {
-  return await safeApiCall(() async {
-    final url = Uri.parse('$_baseUrl/qr/generate?childId=$childId'); // Updated endpoint
-    final response = await http.post(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
+  static Future<String> generateChildQRCode({
+    required String childId,
+    required String token,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/qr/generate?childId=$childId');
+      debugPrint('Generate QR code request: $url, childId=$childId');
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
 
-    if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      if (data['qrCode'] == null) {
-        throw ApiException('QR code not found in response');
+      debugPrint('Generate QR code response: ${response.statusCode} - $data');
+
+      if (response.statusCode == 200) {
+        if (data['qrCode'] == null) {
+          throw ApiException('QR code not found in response');
+        }
+        return data['qrCode'].toString();
       }
-      return data['qrCode'].toString();
-    }
 
-    final errorData = jsonDecode(response.body);
-    throw ApiException(
-      errorData['message'] ?? 'Failed to generate QR code',
-      response.statusCode,
-    );
-  });
-}
+      throw ApiException(
+        data['message'] ?? 'Failed to generate QR code',
+        response.statusCode,
+      );
+    });
+  }
 
-static Future<Map<String, dynamic>> updateParent({
-  required String token,
-  required String userId,
-  required String phone,
-  required String location,
-}) async {
-  return await safeApiCall(() async {
-    final url = Uri.parse('$_baseUrl/parents/$userId');
-    print('Update request - URL: $url, Token: $token, Body: {"phone": "$phone", "location": "$location"}'); // Debug log
-    final response = await http.put(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({
-        'phone': phone,
-        'location': location,
-      }),
-    );
-
-    final data = jsonDecode(response.body);
-    print('Update response: ${response.statusCode} - $data'); // Debug log
-
-    if (response.statusCode == 200) {
-      return data;
-    }
-
-    throw ApiException(
-      data['message'] ?? 'Failed to update parent',
-      response.statusCode,
-    );
-  });
-}
   static Future<Map<String, dynamic>> verifyQRCode({
-  required String qrCode,
-  required String token,
-}) async {
-  return await safeApiCall(() async {
-    final url = Uri.parse('$_baseUrl/qr/verify');
-    final response = await http.post(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({'qrCode': qrCode}),
-    );
+    required String qrCode,
+    required String token,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/qr/verify');
+      debugPrint('Verify QR code request: $url');
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'qrCode': qrCode.trim(),
+        }),
+      );
 
-    final data = jsonDecode(response.body);
+      final data = jsonDecode(response.body);
+      debugPrint('Verify QR code response: ${response.statusCode} - $data');
 
-    if (response.statusCode == 200) {
-      return data;
-    }
+      if (response.statusCode == 200) {
+        return data;
+      }
 
-    switch (response.statusCode) {
-      case 400:
-        throw ApiException('Invalid QR code');
-      case 401:
-        throw ApiException('Unauthorized');
-      case 403:
-        throw ApiException('Unauthorized for this child\'s grade');
-      case 404:
-        throw ApiException('Child not found');
-      case 409:
-        throw ApiException('Pickup already verified');
-      default:
-        throw ApiException('Failed to verify QR code');
-    }
-  });
-}
+      final errorMsg = data['message'] ?? 'Verification failed';
+      switch (response.statusCode) {
+        case 400:
+          throw ApiException('Invalid QR: $errorMsg', response.statusCode);
+        case 401:
+          throw ApiException('Session expired. Please login again', response.statusCode);
+        case 403:
+          throw ApiException('Permission denied: $errorMsg', response.statusCode);
+        case 404:
+          throw ApiException('Record not found: $errorMsg', response.statusCode);
+        case 409:
+          throw ApiException('Already verified: $errorMsg', response.statusCode);
+        default:
+          throw ApiException('Error ${response.statusCode}: $errorMsg', response.statusCode);
+      }
+    });
+  }
 
-// Add this method to the ApiService class in New_api.dart
-static Future<Map<String, dynamic>> createChild({
-  required String token,
-  required String parentId,
-  required String fullname,
-  required String grade,
-  required String gender,
-}) async {
-  return await safeApiCall(() async {
-    final url = Uri.parse('$_baseUrl/children');
-    print('Create child request - URL: $url, Token: $token, Body: {"parentId": "$parentId", "fullname": "$fullname", "grade": "$grade", "gender": "$gender"}'); // Debug log
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({
-        'parentID': parentId,
-        'fullname': fullname,
-        'grade': grade,
-        'gender': gender,
-      }),
-    );
+  static Future<Map<String, dynamic>> updateParent({
+    required String token,
+    required String userId,
+    required String phone,
+    required String location,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/parents/$userId');
+      debugPrint('Update parent request: $url, phone=$phone, location=$location');
+      final response = await http.put(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'phone': phone,
+          'location': location,
+        }),
+      );
 
-    final data = jsonDecode(response.body);
-    print('Create child response: ${response.statusCode} - $data'); // Debug log
+      final data = jsonDecode(response.body);
+      debugPrint('Update parent response: ${response.statusCode} - $data');
 
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      return data;
-    }
+      if (response.statusCode == 200) {
+        return data;
+      }
 
-    throw ApiException(
-      data['message'] ?? 'Failed to create child',
-      response.statusCode,
-    );
-  });
-}
+      throw ApiException(
+        data['message'] ?? 'Failed to update parent',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> updateTeacher({
+    required String token,
+    required String userId,
+    required String phone,
+    required String grade,
+  }) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/teachers/$userId');
+      debugPrint('Update teacher request: $url, phone=$phone, grade=$grade');
+      final response = await http.put(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'phone': phone,
+          'grade': grade,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      debugPrint('Update teacher response: ${response.statusCode} - $data');
+
+      if (response.statusCode == 200) {
+        return data;
+      }
+
+      throw ApiException(
+        data['message'] ?? 'Failed to update teacher',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> getAdminDashboard(String token) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/admin/Data');
+      debugPrint('Get admin dashboard request: $url');
+      final response = await http.get(
+        url,
+        headers: {
+          'accept': '*/*',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = jsonDecode(response.body);
+      debugPrint('Get admin dashboard response: ${response.statusCode} - $data');
+
+      if (response.statusCode == 200) {
+        return data;
+      }
+
+      throw ApiException(
+        data['message'] ?? 'Failed to fetch dashboard data',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<List<PickupLog>> getPickupLogs(String token) async {
+    return await safeApiCall(() async {
+      final url = Uri.parse('$_baseUrl/admin/pickup-logs');
+      debugPrint('Get admin pickup logs request: $url');
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      debugPrint('Get admin pickup logs response: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is! List) {
+          throw ApiException('Invalid response format: Expected a list of logs');
+        }
+        return data.map((log) => PickupLog.fromJson(log)).toList();
+      }
+
+      final errorData = jsonDecode(response.body);
+      throw ApiException(
+        errorData['message'] ?? 'Failed to fetch admin pickup logs',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<List<PickupLog>> getParentPickupLogs(String token) async {
+    return await safeApiCall(() async {
+      final userData = await getUserData();
+      final parentId = userData['roleId'];
+      if (parentId == null) {
+        throw ApiException('Parent ID not found in user data');
+      }
+      final url = Uri.parse('$_baseUrl/parents/$parentId/pickup-logs');
+      debugPrint('Get parent pickup logs request: $url, parentId=$parentId');
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      debugPrint('Get parent pickup logs response: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is! List) {
+          throw ApiException('Invalid response format: Expected a list of logs');
+        }
+        return data.map((log) => PickupLog.fromJson(log)).toList();
+      }
+
+      final errorData = jsonDecode(response.body);
+      throw ApiException(
+        errorData['message'] ?? 'Failed to fetch parent pickup logs',
+        response.statusCode,
+      );
+    });
+  }
+
+  static Future<List<PickupLog>> getTeacherPickupLogs(String token) async {
+    return await safeApiCall(() async {
+      final userData = await getUserData();
+      final teacherId = userData['roleId'];
+      if (teacherId == null) {
+        throw ApiException('Teacher ID not found in user data');
+      }
+      final url = Uri.parse('$_baseUrl/teachers/$teacherId/pickup-logs');
+      debugPrint('Get teacher pickup logs request: $url, teacherId=$teacherId');
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      debugPrint('Get teacher pickup logs response: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is! List) {
+          throw ApiException('Invalid response format: Expected a list of logs');
+        }
+        return data.map((log) => PickupLog.fromJson(log)).toList();
+      }
+
+      final errorData = jsonDecode(response.body);
+      throw ApiException(
+        errorData['message'] ?? 'Failed to fetch teacher pickup logs',
+        response.statusCode,
+      );
+    });
+  }
 
   static Future<void> logout() async {
     await safeApiCall(() async {
@@ -535,6 +714,7 @@ static Future<Map<String, dynamic>> createChild({
       if (token == null) return;
 
       final url = Uri.parse('$_baseUrl/auth/logout');
+      debugPrint('Logout request: $url');
       final response = await http.post(
         url,
         headers: {
@@ -544,6 +724,7 @@ static Future<Map<String, dynamic>> createChild({
         },
       ).timeout(const Duration(seconds: 5));
 
+      debugPrint('Logout response: ${response.statusCode}');
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return;
       }

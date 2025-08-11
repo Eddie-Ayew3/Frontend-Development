@@ -5,8 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:safenest/api/New_api.dart';
 import 'package:safenest/data_entries/add_child.dart';
 import 'package:safenest/data_entries/update_parent.dart';
+import 'package:safenest/api/pickup_log.dart';
 
-/// Parent dashboard screen showing registered children and QR code generation
 class ParentDashboard extends StatefulWidget {
   final String userId;
   final String roleId;
@@ -29,23 +29,23 @@ class ParentDashboard extends StatefulWidget {
 
 class _ParentDashboardState extends State<ParentDashboard>
     with SingleTickerProviderStateMixin {
-  // Constants for consistent styling
   static const _primaryColor = Color(0xFF5271FF);
   static const _accentColor = Color(0xFF00C9FF);
   static const _whiteColor = Colors.white;
   static const _darkColor = Color(0xFF1A1A2E);
 
   List<Map<String, dynamic>> _children = [];
+  List<PickupLog> _pickupLogs = [];
   bool _isLoading = false;
   String? _generatedQRCode;
   DateTime? _qrExpiry;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    // Initialize animations
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -56,9 +56,8 @@ class _ParentDashboardState extends State<ParentDashboard>
         curve: Curves.easeOutQuart,
       ),
     );
-    _loadChildren();
+    _loadData();
 
-    // Start animation after first frame
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _animationController.forward();
     });
@@ -70,22 +69,26 @@ class _ParentDashboardState extends State<ParentDashboard>
     super.dispose();
   }
 
-  /// Loads children data from API
-  Future<void> _loadChildren() async {
+  Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
       final children = await ApiService.getParentChildren(token: widget.token);
+      final logs = await ApiService.getParentPickupLogs(widget.token);
       setState(() {
         _children = children;
+        _pickupLogs = logs;
         _isLoading = false;
+        _errorMessage = null;
       });
     } on ApiException catch (e) {
-      setState(() => _isLoading = false);
-      _showErrorSnackbar('Failed to load children: ${e.message}');
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load data: ${e.message}';
+      });
+      _showErrorSnackbar('Failed to load data: ${e.message}');
     }
   }
 
-  /// Generates QR code for child pickup
   Future<void> _generateQRCode(String childId, String childName) async {
     try {
       setState(() => _isLoading = true);
@@ -107,7 +110,6 @@ class _ParentDashboardState extends State<ParentDashboard>
     }
   }
 
-  /// Shows QR code in a dialog
   void _showQRDialog(String childName) {
     showDialog(
       context: context,
@@ -209,7 +211,6 @@ class _ParentDashboardState extends State<ParentDashboard>
     );
   }
 
-  /// Handles user logout
   Future<void> _logout() async {
     try {
       await ApiService.logout();
@@ -226,11 +227,10 @@ class _ParentDashboardState extends State<ParentDashboard>
     }
   }
 
-  /// Shows error message in a snackbar
   void _showErrorSnackbar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(_formatErrorMessage(message)),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
@@ -240,13 +240,11 @@ class _ParentDashboardState extends State<ParentDashboard>
     );
   }
 
-  /// Navigates to add child screen with slide transition
   void _navigateToAddChild() {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            AddChildScreen(
+        pageBuilder: (context, animation, secondaryAnimation) => AddChildScreen(
           parentId: widget.roleId,
           token: widget.token,
         ),
@@ -264,7 +262,6 @@ class _ParentDashboardState extends State<ParentDashboard>
     );
   }
 
-  /// Navigates to update parent profile screen
   void _navigateToUpdateParent() {
     Navigator.push(
       context,
@@ -277,7 +274,6 @@ class _ParentDashboardState extends State<ParentDashboard>
     );
   }
 
-  /// Builds a child card widget with animation
   Widget _buildChildCard(Map<String, dynamic> child, int index) {
     return AnimatedBuilder(
       animation: _animationController,
@@ -369,38 +365,179 @@ class _ParentDashboardState extends State<ParentDashboard>
     );
   }
 
+  Widget _buildPickupLogsSection() {
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (context, _) {
+        return Transform.translate(
+          offset: Offset(0, 50 * (1 - _fadeAnimation.value)),
+          child: Opacity(
+            opacity: _fadeAnimation.value,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Recent Pickups',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _darkColor),
+                  ),
+                  const SizedBox(height: 10),
+                  FutureBuilder<List<PickupLog>>(
+                    future: Future.value(_pickupLogs),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator(color: _primaryColor));
+                      } else if (snapshot.hasError) {
+                        return _buildErrorState(snapshot.error.toString());
+                      } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(
+                          child: Column(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.blue, size: 50),
+                              SizedBox(height: 16),
+                              Text('No pickup records found', style: TextStyle(color: _darkColor)),
+                            ],
+                          ),
+                        );
+                      } else {
+                        return ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: snapshot.data!.length,
+                          itemBuilder: (context, index) {
+                            final log = snapshot.data![index];
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 5),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: ListTile(
+                                leading: const Icon(Icons.check_circle, color: Colors.green),
+                                title: Text(log.childName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Verified by: ${log.verifiedBy}'),
+                                    Text(
+                                      'Verified at: ${DateFormat('MMM d, hh:mm a').format(log.verifiedAt)}',
+                                      style: TextStyle(color: Colors.grey[600]),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 50),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'Error loading data\n${_formatErrorMessage(error)}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadData,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryColor,
+              foregroundColor: _whiteColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Try Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatErrorMessage(String error) {
+    if (error.contains('401')) return 'Session expired. Please login again.';
+    if (error.contains('network')) return 'Network error. Check your connection.';
+    return error;
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.child_care,
+            size: 60,
+            color: Colors.grey[300],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No children registered',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[500],
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _navigateToAddChild,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryColor,
+              foregroundColor: _whiteColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 32,
+                vertical: 16,
+              ),
+            ),
+            child: const Text('Add Your First Child'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-          decoration: BoxDecoration(
-            color: _primaryColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Text(
-            'PARENT DASHBOARD',
-            style: TextStyle(
-              color: _primaryColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-              letterSpacing: 1.2,
-            ),
-          ),
+        leading: IconButton(
+          icon: const Icon(Icons.settings),
+          onPressed: _navigateToUpdateParent,
+          tooltip: 'Settings',
+        ),
+        title: Image.asset(
+          'assets/safenest.png',
+          height: 50,
+          fit: BoxFit.contain,
         ),
         centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.transparent,
         foregroundColor: _darkColor,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: _navigateToUpdateParent,
-            tooltip: 'Settings',
-          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _logout,
@@ -416,7 +553,7 @@ class _ParentDashboardState extends State<ParentDashboard>
         child: const Icon(Icons.add, size: 28),
       ),
       body: RefreshIndicator(
-        onRefresh: _loadChildren,
+        onRefresh: _loadData,
         color: _primaryColor,
         child: Stack(
           children: [
@@ -425,8 +562,7 @@ class _ParentDashboardState extends State<ParentDashboard>
               slivers: [
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
                     child: Column(
                       children: [
                         Container(
@@ -476,68 +612,29 @@ class _ParentDashboardState extends State<ParentDashboard>
                                 fontSize: 14,
                                 color: Colors.grey[600],
                               ),
-                            )
+                            ),
                           ],
                         ),
                       ],
                     ),
                   ),
                 ),
-                if (_isLoading && _children.isEmpty)
+                if (_errorMessage != null)
+                  SliverFillRemaining(child: _buildErrorState(_errorMessage!))
+                else if (_isLoading && _children.isEmpty)
                   const SliverFillRemaining(
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: _primaryColor,
-                      ),
-                    ),
+                    child: Center(child: CircularProgressIndicator(color: _primaryColor)),
                   )
                 else if (_children.isEmpty)
-                  SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.child_care,
-                            size: 60,
-                            color: Colors.grey[300],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No children registered',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          ElevatedButton(
-                            onPressed: _navigateToAddChild,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _primaryColor,
-                              foregroundColor: _whiteColor,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 32,
-                                vertical: 16,
-                              ),
-                            ),
-                            child: const Text('Add Your First Child'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
+                  SliverFillRemaining(child: _buildEmptyState())
                 else
                   SliverList(
                     delegate: SliverChildBuilderDelegate(
-                      (context, index) =>
-                          _buildChildCard(_children[index], index),
+                      (context, index) => _buildChildCard(_children[index], index),
                       childCount: _children.length,
                     ),
                   ),
+                SliverToBoxAdapter(child: _buildPickupLogsSection()),
                 const SliverToBoxAdapter(child: SizedBox(height: 100)),
               ],
             ),
