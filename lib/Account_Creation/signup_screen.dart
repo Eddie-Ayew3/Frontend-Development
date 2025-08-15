@@ -1,17 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:safenest/accounts/auth_form.dart';
-import 'package:safenest/accounts/login_screen.dart';
-import 'package:safenest/api/New_api.dart';
+import 'package:safenest/Api_Service/New_api.dart' show ApiService, ApiException;
+import 'package:safenest/Account_Creation/auth_form.dart';
+import 'package:safenest/Account_Creation/login_screen.dart';
 
-/// Registration screen that allows new users to create an account.
-/// Features:
-/// - Full name field
-/// - Email validation
-/// - Password validation (min 8 chars)
-/// - Password visibility toggle
-/// - Role selection (Parent/Teacher)
-/// - Link to login screen
-/// - Error handling with user-friendly messages
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -29,11 +20,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   String? _errorMessage;
   bool _obscurePassword = true;
 
-  /// Handles the registration process by:
-  /// 1. Validating the form
-  /// 2. Calling the API service
-  /// 3. Handling success/error cases
-  /// 4. Navigating to appropriate dashboard based on user role
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -43,7 +29,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     });
 
     try {
-      final response = await ApiService.register(
+      final response = await ApiService().register(
         fullname: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
@@ -51,12 +37,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
       );
 
       if (!mounted) return;
-      
+
       final role = _selectedRole.toLowerCase();
       final roleId = response['roleId']?.toString() ?? '';
+      final token = response['token']?.toString() ?? '';
 
-      if (roleId.isEmpty) {
-        throw ApiException('Registration incomplete - no roleId received');
+      if (roleId.isEmpty || token.isEmpty) {
+        throw ApiException('Registration incomplete - no roleId or token received');
       }
 
       const allowedRoles = {
@@ -68,18 +55,17 @@ class _SignUpScreenState extends State<SignUpScreen> {
         throw ApiException('Unauthorized role: $role');
       }
 
-      // Navigate with fade transition
       Navigator.pushReplacementNamed(
         context,
         allowedRoles[role]!,
         arguments: {
-          'role': role,
+          'userId': response['userId'] ?? '',
           'roleId': roleId,
+          'token': token,
           'email': _emailController.text.trim(),
           'fullname': _nameController.text.trim(),
         },
       );
-
     } on ApiException catch (e) {
       setState(() => _errorMessage = _parseError(e));
     } catch (e) {
@@ -89,7 +75,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
-  /// Converts API exception messages to user-friendly error messages
   String _parseError(ApiException e) {
     if (e.message.contains('400')) return 'Please check your input and try again.';
     if (e.message.contains('409')) return 'This email is already registered.';
@@ -122,7 +107,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return SlideTransition(
               position: Tween<Offset>(
-                begin: const Offset(-1.0, 0.0),
+                begin: const Offset(1.0, 0.0),
                 end: Offset.zero,
               ).animate(animation),
               child: child,
@@ -141,7 +126,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
           key: _formKey,
           child: Column(
             children: [
-              // Full name field
               TextFormField(
                 controller: _nameController,
                 decoration: _inputDecoration('Full Name', Icons.person_outline),
@@ -156,7 +140,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 },
               ),
               const SizedBox(height: 20),
-              // Email field
               TextFormField(
                 controller: _emailController,
                 decoration: _inputDecoration('Email', Icons.email_outlined),
@@ -172,7 +155,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 },
               ),
               const SizedBox(height: 20),
-              // Password field with visibility toggle
               TextFormField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
@@ -200,7 +182,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 },
               ),
               const SizedBox(height: 20),
-              // Role selection dropdown
               DropdownButtonFormField<String>(
                 value: _selectedRole,
                 decoration: _inputDecoration('Role', Icons.people_outline),
@@ -236,7 +217,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  /// Creates a consistent input decoration for form fields
   InputDecoration _inputDecoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,

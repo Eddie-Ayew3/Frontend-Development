@@ -1,16 +1,21 @@
-import 'package:flutter/material.dart';
-import 'package:safenest/accounts/auth_form.dart';
-import 'package:safenest/accounts/signup_screen.dart';
-import 'package:safenest/api/New_api.dart';
+// Modified login_screen.dart
+// Changes:
+// - Added platform detection imports
+// - In _handleLogin, after successful API login:
+//   - If on mobile (!kIsWeb) and role == 'admin', show error and don't navigate
+//   - If on web (kIsWeb) and role != 'admin', show error and don't navigate
+//   - Otherwise, proceed with navigation
+// - Added constant for web URL (modifiable)
+// - Added constant for allowed mobile roles (modifiable)
 
-/// Login screen that allows users to authenticate with email and password.
-/// Features:
-/// - Email validation
-/// - Password validation (min 6 chars)
-/// - Password visibility toggle
-/// - Forgot password option
-/// - Link to registration screen
-/// - Error handling with user-friendly messages
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:safenest/Account_Creation/auth_form.dart';
+import 'package:safenest/Account_Creation/signup_screen.dart';
+import 'package:safenest/Api_Service/New_api.dart';
+
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -26,11 +31,15 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _errorMessage;
   bool _obscurePassword = true;
 
-  /// Handles the login process by:
-  /// 1. Validating the form
-  /// 2. Calling the API service
-  /// 3. Handling success/error cases
-  /// 4. Navigating to appropriate dashboard based on user role
+  // Modifiable: Web dashboard URL for admin error message
+  static const String adminWebUrl = 'https://admin.mydomain.com';
+
+  // Modifiable: List of roles allowed on mobile platforms
+  static const List<String> mobileAllowedRoles = ['parent', 'teacher'];
+
+  // Modifiable: Role required for web access
+  static const String webRequiredRole = 'admin';
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -40,19 +49,35 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final response = await ApiService.login(
+      final response = await ApiService().login(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
       if (!mounted) return;
-      
+
       final role = response['role']?.toString().toLowerCase() ?? '';
       final roleId = response['roleId']?.toString() ?? '';
       final token = response['token']?.toString() ?? '';
 
       if (role.isEmpty || roleId.isEmpty || token.isEmpty) {
         throw ApiException('Invalid login response data');
+      }
+
+      // Role restriction checks
+      if (!kIsWeb && role == webRequiredRole) {
+        // Block admin on mobile
+        throw ApiException('Admins are restricted on mobile. Please use the web dashboard at $adminWebUrl');
+      }
+
+      if (kIsWeb && role != webRequiredRole) {
+        // Block non-admin on web (ensures web app is admin-only)
+        throw ApiException('This web app is for admins only. Please use the mobile app for $role access.');
+      }
+
+      if (!kIsWeb && !mobileAllowedRoles.contains(role)) {
+        // General mobile role check (in case of new roles)
+        throw ApiException('Unauthorized role for mobile: $role');
       }
 
       final dashboardRoutes = {
@@ -65,19 +90,17 @@ class _LoginScreenState extends State<LoginScreen> {
         throw ApiException('Unauthorized role: $role');
       }
 
-      // Navigate with slide transition
       Navigator.pushReplacementNamed(
         context,
         dashboardRoutes[role]!,
         arguments: {
-          'role': role,
+          'userId': response['userId'] ?? '',
           'roleId': roleId,
           'token': token,
           'email': response['email'] ?? '',
           'fullname': response['fullname'] ?? '',
         },
       );
-
     } on ApiException catch (e) {
       setState(() => _errorMessage = _parseLoginError(e));
     } catch (e) {
@@ -87,12 +110,12 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Converts API exception messages to user-friendly error messages
   String _parseLoginError(ApiException e) {
     if (e.message.contains('401')) return 'Invalid email or password. Please try again.';
     if (e.message.contains('network')) return 'Network error. Please check your connection.';
     if (e.message.contains('timeout')) return 'Request timed out. Please try again.';
-    return 'Login failed: ${e.message}';
+    // Preserve custom error messages from role checks
+    return e.message;
   }
 
   @override
@@ -104,6 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Existing build method remains unchanged
     return AuthForm(
       title: 'SafeNest',
       subtitle: 'Welcome back! Please login to your account',
@@ -138,7 +162,6 @@ class _LoginScreenState extends State<LoginScreen> {
           key: _formKey,
           child: Column(
             children: [
-              // Email field
               TextFormField(
                 controller: _emailController,
                 decoration: _inputDecoration('Email', Icons.email_outlined),
@@ -154,7 +177,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 },
               ),
               const SizedBox(height: 20),
-              // Password field with visibility toggle
               TextFormField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
@@ -182,14 +204,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 },
               ),
               const SizedBox(height: 8),
-              // Forgot password link
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: _isLoading
                       ? null
                       : () {
-                          // TODO: Implement forgot password functionality
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Forgot password feature coming soon!'),
@@ -214,7 +234,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Creates a consistent input decoration for form fields
   InputDecoration _inputDecoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,

@@ -1,7 +1,7 @@
 import 'package:intl/intl.dart';
 
 class PickupLog {
-  final int logID;
+  final String logID;
   final DateTime verifiedAt;
   final String childName;
   final String grade;
@@ -19,14 +19,17 @@ class PickupLog {
 
   factory PickupLog.fromJson(Map<String, dynamic> json) {
     return PickupLog(
-      logID: json['logID'],
+      logID: json['logID']?.toString() ?? '',
       verifiedAt: DateTime.parse(json['verifiedAt']),
-      childName: json['childName'],
-      grade: json['grade'],
-      parentName: json['parentName'] ?? 'N/A',
-      verifiedBy: json['verifiedBy'],
+      childName: json['childName'] ?? 'Unknown',
+      grade: json['grade'] ?? 'N/A',
+      parentName: json['parentName'] ?? 'Unknown',
+      verifiedBy: json['verifiedBy'] ?? 'Unknown',
+      
     );
   }
 
   String get formattedTime => DateFormat('MMM d, hh:mm a').format(verifiedAt);
+
+  get childID => null;
 }
